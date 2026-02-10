@@ -13,6 +13,7 @@ This implementation focuses on reproducing the Voltage-Dependent Synaptic Plasti
 Visualization of learned SNN weights (Binary Features) after training on MNIST.
 
 🚀 Key Features & Modifications
+
 This project is not a direct translation; it includes several architectural experimental changes to test performance and usability in PyTorch:
 
 1. Refactored Reproduction
@@ -40,14 +41,14 @@ Robust Pooling: The pooling layer correctly handles the "Single-Spike" constrain
 5. Visualization Tools
 Includes a dedicated Visualize.py script to generate:
 
-
-Weight Grids: Visualizes the learned convolutional kernels, demonstrating the "binary weight" phenomenon described in the paper.
+Weight Grids: Visualizes the learned convolutional kernels, demonstrating the "binary weight" phenomenon described in the paper. 
+(Examples stored in folder "results").
 
 Prediction Demos: Runs inference on random test samples and displays the input image alongside the predicted label.
 
 📂 Project Structure
-Layers.py: Contains the CsnnLayer (with VDSP logic) and SnnPooling classes.
 
+Layers.py: Contains the CsnnLayer (with VDSP logic) and SnnPooling classes.
 
 Model.py: Assembles the CSNN and the Linear SVM readout  into a unified model class. Handles feature extraction and flattening.
 
@@ -56,6 +57,7 @@ Training.py: Main script for the unsupervised training loop.
 Visualize.py: Loads trained checkpoints to visualize weights and perform inference.
 
 🛠️ Usage
+
 Prerequisites
 Python 3.x
 
