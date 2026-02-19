@@ -75,6 +75,7 @@ def predict_and_show(model, dataset, device, num_samples=10):
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = 'cpu'
     print(f">>> current device: {device}")
 
     transform = transforms.Compose([transforms.ToTensor()])
@@ -83,7 +84,7 @@ def main():
     model = CSNN_Layerwise(device=device)
 
 
-    checkpoint_path = "checkpoints_CSNN/snn_weight_epoch_30.pth"
+    checkpoint_path = "checkpoints_CSNN/snn_weight_epoch_99.pth"
 
     try:
         print(f">>> loading weights: {checkpoint_path} ...")
@@ -97,9 +98,9 @@ def main():
 
     visualize_weights(model)
 
-    path = f"checkpoints_SVM/SVM_weight.pth"
-    model.svm_classifier = joblib.load(path)
-    model.is_svm_trained = True
+    path = f"checkpoints_PCN/PCN_weight.pth"
+    weights = torch.load(path, map_location=device)
+    model.pcn.weight.data = weights
 
     predict_and_show(model, test_dataset, device)
 
