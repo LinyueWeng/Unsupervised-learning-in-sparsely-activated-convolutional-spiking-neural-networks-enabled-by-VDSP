@@ -7,19 +7,19 @@ from sympy.assumptions.wrapper import is_extended_real
 class HHNeuron:
     ## HH Model for biological neuron, modeled as a reference for other models##
     def __init__(self,
-        v=np.arange(-100, 100),# range of voltage values of interest
-        E_Na = 120,
-        E_K = -12,
-        E_L = 10.6,
-        g_Na = 120,
-        g_K = 36,
-        g_L = 0.3,
-        C = 1,
-        m_exponent=3,#here you could change the exponents of gating variables to extend the standard hh model to other approximated models
-        n_exponent=4,
-        h_exponent=1,
-        show_gating_variables=False,# modify this to plot gating variables: asymptotic values (x0) and time constants (tau)
-        show_neuron_dynamics = False):# modify this to plot neuron dynamics
+                v=np.arange(-100, 100),# range of voltage values of interest
+                E_Na = 120,
+                E_K = -12,
+                E_L = 10.6,
+                g_Na = 120,
+                g_K = 36,
+                g_L = 0.3,
+                C = 1,
+                m_exponent=3,#here you could change the exponents of gating variables to extend the standard hh model to other approximated models
+                n_exponent=4,
+                h_exponent=1,
+                show_gating_variables=False,# modify this to plot gating variables: asymptotic values (x0) and time constants (tau)
+                show_neuron_dynamics = False):# modify this to plot neuron dynamics
         self.E_Na = E_Na
         self.E_K = E_K
         self.E_L = E_L
@@ -166,7 +166,47 @@ class HHNeuron:
             plt.tight_layout()
             plt.show()
 
-        return 0
+        return V
+
+class CableModel:
+    def __init__(self,
+                 r_i,# intracellular resistivity in ohm*cm
+                 r_m,# membrane resistivity in ohm*cm^2
+                 l = 5,# length of the cable section in cm
+                 dx = 0.01, # spatial step in cm
+                 v0 = 1,
+                 is_show=False):# Voltage the cable input
+
+        self.r_i = r_i
+        self.r_m = r_m
+        self.l = l
+        self.dx = dx
+        self.v0 = v0
+        self.num_sections = len(r_i)
+        self.is_show = is_show
+
+    def __call__(self):
+        v_ends= np.zeros(len(self.r_i)+1)
+        v_ends[0]=self.v0
+        v=np.zeros([self.num_sections,len(np.arange(self.l/self.dx))])
+        for i in range(len(self.r_i)):
+            v_sections=(v_ends[i]*self.v_x(np.arange(0, self.l, self.dx), self.r_i[i], self.r_m[i]))
+            v_ends[i+1]=v_sections[-1]
+            v[i]=v_sections
+        v=np.concatenate(v)
+        if self.is_show:
+            x_values = np.arange(0, self.num_sections * self.l, self.dx)
+            plt.figure()
+            plt.plot(x_values, v, linewidth=2)
+            plt.xlabel('Distance along the cable (cm)')
+            plt.ylabel('Voltage (mV)')
+            plt.grid(True, alpha=0.3)
+            plt.show()
+        return v
+
+    def v_x(self,x, r_i, r_m):
+        lam = (r_m / r_i) ** 0.5
+        return np.exp(-x / lam)
 
 
 def input_current_function(t):
@@ -199,5 +239,6 @@ def input_current_function(t):
         return 0.0
 
 
-model=HHNeuron(show_neuron_dynamics=True)
+#model=HHNeuron(show_neuron_dynamics=True)
+model=CableModel([10,20,5,10],[10000,1000,1000,1000],l=10,is_show=True)
 model()
