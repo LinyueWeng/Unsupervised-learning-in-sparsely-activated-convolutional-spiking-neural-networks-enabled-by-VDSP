@@ -162,4 +162,4 @@ def main(train_csnn,train_pcn,is_pcn=True,train_svm=False,is_svm=False):
 
     print(f"\n>>> Accuracy: {100 * correct / total:.2f}%")
 
-main(False,False,is_svm=False,is_pcn=True,train_svm=False)
+main(False,True,is_svm=False,is_pcn=True,train_svm=False)

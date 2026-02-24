@@ -1,7 +1,6 @@
 from scipy.integrate import odeint
 import numpy as np
 import matplotlib.pyplot as plt
-from sympy.assumptions.wrapper import is_extended_real
 
 
 class HHNeuron:
@@ -239,6 +238,6 @@ def input_current_function(t):
         return 0.0
 
 
-#model=HHNeuron(show_neuron_dynamics=True)
-model=CableModel([10,20,5,10],[10000,1000,1000,1000],l=10,is_show=True)
+model=HHNeuron(show_neuron_dynamics=True)
+#model=CableModel([10,20,5,10],[10000,1000,1000,1000],l=10,is_show=True)
 model()

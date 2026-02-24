@@ -6,6 +6,8 @@ class ReadoutPCN():
     def __init__(self,
                  input_shape,
                  num_classes,
+                 num_neurons_multiplier=20,
+                 top_k=12,
                  device='cpu',
                  t_max=1,
                  t_gap=0.1,
@@ -17,13 +19,15 @@ class ReadoutPCN():
 
         self.device = device
         self.num_classes = num_classes
-        self.num_neurons = num_classes*2
+        self.num_neurons_multiplier=num_neurons_multiplier
+        self.num_neurons = num_classes*num_neurons_multiplier
         self.t_max=t_max
         self.w_min=w_min
         self.w_max=w_max
         self.t_gap=t_gap
         self.pos_lr=pos_lr
         self.neg_lr=neg_lr
+        self.top_k=min(top_k,self.num_neurons_multiplier)
 
         self.weight=torch.normal(mean=weight_mean,std=weight_std,size=(input_shape,self.num_neurons)).to(self.device)
 
@@ -44,14 +48,13 @@ class ReadoutPCN():
             input_feature = torch.tensor(input_feature, dtype=torch.float32)
         input_feature = input_feature.to(self.device)
         output_latency=self.forward(input_feature)
-        t_mean=output_latency.mean()
         batch_size=1
-        global_error = torch.zeros_like(output_latency).to(self.device)  # (num_neurons)
 
         #comput winner latency
-        output_latency=output_latency.reshape(self.num_classes,2)#(num_classes,2)
-        winner_indices=torch.argmin(output_latency,dim=1)#(num_classes)
-        winner_latency=torch.gather(output_latency,dim=1,index=winner_indices.unsqueeze(1)).squeeze(1)#(num_classes)
+        output_latency=output_latency.reshape(self.num_classes,self.num_neurons_multiplier)#(num_classes,num_neurons_multiplier)
+        topk_latencies, topk_indices = torch.topk(output_latency, self.top_k, dim=1, largest=False)  # (num_classes, k)
+        winner_latency = topk_latencies.mean(dim=1)#(num_classes)
+        t_mean=winner_latency.mean()
 
         #comput error
         class_mask=torch.zeros_like(winner_latency).bool().to(self.device)
@@ -60,8 +63,11 @@ class ReadoutPCN():
         error=(winner_latency-latency_target)/self.t_max#(num_classes)
 
         #generate global error matrix
-        global_winner_indices=torch.arange(self.num_classes,device=self.device)*2+winner_indices#(num_classes)
-        global_error.scatter_(0,global_winner_indices,error)
+        global_error = torch.zeros(self.num_neurons).to(self.device)
+        class_offsets = torch.arange(self.num_classes, device=self.device).unsqueeze(1) * self.num_neurons_multiplier
+        global_winner_indices = class_offsets + topk_indices  # (num_classes, k)
+        expanded_error = error.unsqueeze(1).expand(-1, self.top_k).flatten()
+        global_error.scatter_(0, global_winner_indices.flatten(), expanded_error)
 
         #compute weight update
         input_trace=self.t_max-input_feature
@@ -77,8 +83,11 @@ class ReadoutPCN():
         #print(f"delta_weight: {delta_weight.sum().item():.6f}")
 
     def predict(self,input_feature):
+        # Population Voting within each class
         output_latency=self.forward(input_feature)
-        return output_latency.argmin()//2
+        output_latency = output_latency.reshape(self.num_classes, self.num_neurons_multiplier)
+        class_latency = output_latency.mean(dim=1)
+        return class_latency.argmin()
 
 
 

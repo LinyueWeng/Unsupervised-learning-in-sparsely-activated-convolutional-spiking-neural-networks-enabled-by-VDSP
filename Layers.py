@@ -130,7 +130,7 @@ class CsnnLayer:
             self.potential[win_c] = self.v_reset
 
             spatial_mask = torch.zeros((self.output_h, self.output_w), device=self.device)
-            spatial_mask[win_h, win_w] = 1.0  # 点亮赢家所在的位置
+            spatial_mask[win_h, win_w] = 1.0
 
             if self.r_inhib > 0:
                 kernel_size = 2 * self.r_inhib + 1
@@ -172,17 +172,20 @@ class CsnnLayer:
 
         w_winners = self.weight[winner_c]
 
-        cond_pot = win_spikes > 0  # LTP
-        w_factor = w_winners * (self.w_max - w_winners)
+        if True:
+##here we use the simplified linear updating formula of the paper to calculate the weight update as default##
+            cond_pot = win_spikes > 0  # LTP
+            w_factor = w_winners * (self.w_max - w_winners)
 
-        norm_pots = win_pots / self.v_thresh
-        g_dep = self.f_dep - norm_pots
+            norm_pots = win_pots / self.v_thresh
+            g_dep = self.f_dep - norm_pots
 
-        delta_weights = torch.where(
-            cond_pot,
-            w_factor * self.lr,  # LTP
-            w_factor * g_dep * self.lr  # LTD
-        )
+            delta_weights = torch.where(
+                cond_pot,
+                w_factor * self.lr,  # LTP
+                w_factor * g_dep * self.lr  # LTD
+            )
+##end of weight update formula##
 
         self.weight.index_add_(dim=0, index=winner_c, source=delta_weights)
 
@@ -190,7 +193,7 @@ class CsnnLayer:
 
         # if N > 0:
         #     print(f"Total Delta: {delta_weights.sum().item():.6f} "
-        #           f"(LTP: {delta_weights[cond_pot].sum():.6f}, "
+        #           f"(LTP: {delta_weights[cond_pot].sum():.6f}, "S
         #           f"LTD: {delta_weights[~cond_pot].sum():.6f})")
 
         return self.weight
@@ -237,26 +240,17 @@ class SnnPooling:
                  kernel_size=3,
                  stride=1,
                  padding=3,
-                 f_dep=0.01,
-                 timesteps=15,
-                 w_min=0,w_max=1,
-                 v_rest=0,
                  v_thresh=10,
                  v_reset=-1,
-                 r_inhib=3,
+                 timesteps=15,
                  device=device_local
                  ):
         self.device=device
         self.kernel_size=kernel_size
         self.stride=stride
         self.padding=padding
-        self.f_dep=f_dep
-        self.v_rest=v_rest
         self.v_thresh=v_thresh
         self.v_reset=v_reset
-        self.r_inhib=r_inhib
-        self.w_min=w_min
-        self.w_max=w_max
         self.timesteps=timesteps
 
         batch_size,self.input_c,input_h,input_w=input_shape
@@ -268,10 +262,6 @@ class SnnPooling:
 
     def __call__(self,input_potential,input_spike):
         self.reset_state()
-        timestep,c,h,w=input_spike.shape
-        output_spike_list=[]
-        output_potential_list=[]
-
         self.activation = torch.ones(self.input_c,self.output_h,self.output_w).bool().to(self.device)
 
         comp_potential = input_potential.clone()
