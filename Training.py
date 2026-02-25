@@ -1,3 +1,5 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
@@ -13,7 +15,7 @@ def main(train_csnn,train_pcn,is_pcn=True,train_svm=False,is_svm=False):
 ##train_pcn: True means train PCN classifier, False means load weights for PCN classifier.(input by user)
 ##train_csnn: True means train CSNN, False means load weights for CSNN.(input by user)
 ##for small size input images, the device is strongly recommended to be cpu.
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    #device = "cuda" if torch.cuda.is_available() else "cpu"
     device = 'cpu'
     print(f"current device: {device}")
 
@@ -162,4 +164,4 @@ def main(train_csnn,train_pcn,is_pcn=True,train_svm=False,is_svm=False):
 
     print(f"\n>>> Accuracy: {100 * correct / total:.2f}%")
 
-main(False,True,is_svm=False,is_pcn=True,train_svm=False)
+main(True,True,is_svm=False,is_pcn=True,train_svm=False)

@@ -1,8 +1,11 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
 
 from torch.nn.functional import conv2d,unfold,max_pool2d
-
-device_local = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from Synapse_Models import Ferroelectric
+#device_local = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device_local='cpu'
 
 class CsnnLayer:
     ## convolutional layer for spiking neural network ##
@@ -21,7 +24,8 @@ class CsnnLayer:
                  v_reset=-1,
                  r_inhib=3,
                  weight_mean=0.8,weight_std=0.05,
-                 device=device_local
+                 device=device_local,
+                 synapse_model='linear'
                  ):
 
         self.device=device
@@ -39,6 +43,9 @@ class CsnnLayer:
         self.r_inhib = r_inhib
         self.lr=lr
         self.f_dep=f_dep
+        self.synapse_model=synapse_model
+
+        self.synapse_model_dictionary={'Ferroelectric':Ferroelectric}
 
         self.weight=torch.normal(mean=weight_mean, std=weight_std,size=(self.output_channels,self.input_c,self.kernel_size,self.kernel_size)).to(device)
         self.weight=torch.clamp(self.weight, min=self.w_min, max=self.w_max).to(self.device)
@@ -172,7 +179,7 @@ class CsnnLayer:
 
         w_winners = self.weight[winner_c]
 
-        if True:
+        if self.synapse_model=='linear':
 ##here we use the simplified linear updating formula of the paper to calculate the weight update as default##
             cond_pot = win_spikes > 0  # LTP
             w_factor = w_winners * (self.w_max - w_winners)
@@ -185,16 +192,23 @@ class CsnnLayer:
                 w_factor * self.lr,  # LTP
                 w_factor * g_dep * self.lr  # LTD
             )
+        elif synapse_model:=self.synapse_model_dictionary.get(self.synapse_model):
+            cond_pot=win_spikes>0
+            synapse_model_instance=synapse_model(w_winners)
+            delta_weights=synapse_model_instance(win_pots,self.v_thresh,cond_pot)
+        else:
+            raise ValueError(f"synapse model {self.synapse_model} not found")
+
 ##end of weight update formula##
 
         self.weight.index_add_(dim=0, index=winner_c, source=delta_weights)
 
         self.weight.clamp_(self.w_min, self.w_max)
 
-        # if N > 0:
-        #     print(f"Total Delta: {delta_weights.sum().item():.6f} "
-        #           f"(LTP: {delta_weights[cond_pot].sum():.6f}, "S
-        #           f"LTD: {delta_weights[~cond_pot].sum():.6f})")
+        if N > 0:
+            print(f"Total Delta: {delta_weights.sum().item():.6f} "
+                  f"(LTP: {delta_weights[cond_pot].sum():.6f}, "
+                  f"LTD: {delta_weights[~cond_pot].sum():.6f})")
 
         return self.weight
 

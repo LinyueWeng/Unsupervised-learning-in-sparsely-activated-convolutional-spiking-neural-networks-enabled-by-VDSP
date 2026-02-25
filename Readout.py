@@ -1,3 +1,5 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
 
 class ReadoutPCN():
@@ -7,7 +9,7 @@ class ReadoutPCN():
                  input_shape,
                  num_classes,
                  num_neurons_multiplier=20,
-                 top_k=12,
+                 top_k=10,
                  device='cpu',
                  t_max=1,
                  t_gap=0.1,

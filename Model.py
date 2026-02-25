@@ -1,11 +1,13 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
 from Layers import CsnnLayer,SnnPooling
 from Readout import ReadoutPCN
 from sklearn.svm import LinearSVC
 from sklearn.utils import shuffle
 from tqdm import tqdm
-device_local = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+#device_local = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device_local='cpu'
 class CSNN_Layerwise:
 
     def __init__(self,device=device_local,is_pcn=True,is_svm=False):
@@ -66,7 +68,7 @@ class CSNN_Layerwise:
                 feature = feature.cpu().numpy()
             return self.svm_classifier.predict(feature.reshape(1,-1))[0]
         if self.is_pcn:
-            feature=self.feature_extractor_pcn(image_tensor)
+            feature=self.feature_extractor_pcn(image_tensor,t_max=1)
             if isinstance(feature, torch.Tensor):
                 feature = feature.cpu().numpy()
             return self.pcn.predict(feature)
