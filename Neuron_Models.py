@@ -207,7 +207,6 @@ class CableModel:
         lam = (r_m / r_i) ** 0.5
         return np.exp(-x / lam)
 
-
 def input_current_function(t):
     ## input current function for the neuron##
     if 2 <= t <= 2.5:
@@ -236,8 +235,3 @@ def input_current_function(t):
         return 200.0
     else:
         return 0.0
-
-
-model=HHNeuron(show_neuron_dynamics=True)
-#model=CableModel([10,20,5,10],[10000,1000,1000,1000],l=10,is_show=True)
-model()
