@@ -1,14 +1,16 @@
 
 .idea/
 
-
+extracted_feature/
 .venv/
 venv/
 ENV/
 
+utils.py
 
 __pycache__/
 *.py[cod]
 
 
-data/
+data/MNIST
+git rm -r --cached extracted_feature/

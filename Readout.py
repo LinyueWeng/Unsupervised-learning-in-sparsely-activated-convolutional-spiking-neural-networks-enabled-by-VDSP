@@ -16,19 +16,19 @@ class ReadoutPCN():
                  w_min=0.0,w_max=1.0,
                  pos_lr=0.01,
                  neg_lr=0.002,
-                 weight_mean=0.5,weight_std=0.1
+                 weight_mean=0.8,weight_std=0.1
                  ):
 
         self.device = device
         self.num_classes = num_classes
         self.num_neurons_multiplier=num_neurons_multiplier
         self.num_neurons = num_classes*num_neurons_multiplier
-        self.t_max=t_max
-        self.w_min=w_min
-        self.w_max=w_max
-        self.t_gap=t_gap
-        self.pos_lr=pos_lr
-        self.neg_lr=neg_lr
+        self.t_max=torch.tensor(t_max, dtype=torch.float32, device=self.device)
+        self.w_min=torch.tensor(w_min, dtype=torch.float32, device=self.device)
+        self.w_max=torch.tensor(w_max, dtype=torch.float32, device=self.device)
+        self.t_gap=torch.tensor(t_gap, dtype=torch.float32, device=self.device)
+        self.pos_lr=torch.tensor(pos_lr, dtype=torch.float32, device=self.device)
+        self.neg_lr=torch.tensor(neg_lr, dtype=torch.float32, device=self.device)
         self.top_k=min(top_k,self.num_neurons_multiplier)
 
         self.weight=torch.normal(mean=weight_mean,std=weight_std,size=(input_shape,self.num_neurons)).to(self.device)
