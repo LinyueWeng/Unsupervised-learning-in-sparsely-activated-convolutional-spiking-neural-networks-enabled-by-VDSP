@@ -7,7 +7,7 @@ from torchvision import datasets, transforms
 import random
 
 from Model import CSNN_Layerwise
-
+from utils import DoGTransform
 
 def visualize_weights(model, save_name="weights_vis.png"):
 
@@ -75,18 +75,21 @@ def predict_and_show(model, dataset, device, num_samples=10):
     plt.show()
 
 
-def main():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def main(is_pcn=True,is_svm=False):
+    #device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = 'cpu'
     print(f">>> current device: {device}")
 
-    transform = transforms.Compose([transforms.ToTensor()])
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        DoGTransform(kernel_size=7, sigma1=1.0, sigma2=2.0)
+    ])
     test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
 
-    model = CSNN_Layerwise(device=device)
+    model = CSNN_Layerwise(device=device,is_pcn=is_pcn,is_svm=is_svm)
 
 
-    checkpoint_path = "checkpoints_CSNN/snn_weight_epoch_99.pth"
+    checkpoint_path = "checkpoints_CSNN/snn_weight_epoch_1.pth"
 
     try:
         print(f">>> loading weights: {checkpoint_path} ...")
@@ -99,11 +102,14 @@ def main():
         return
 
     visualize_weights(model)
-
-    path = f"checkpoints_PCN/PCN_weight.pth"
-    weights = torch.load(path, map_location=device)
-    model.pcn.weight.data = weights
+    if is_pcn:
+        path = f"checkpoints_PCN/PCN_weight.pth"
+        weights = torch.load(path, map_location=device)
+        model.pcn.weight.data = weights
+    elif is_svm:
+        path = f"checkpoints_SVM/SVM_weight.pth"
+        model.svm_classifier = joblib.load(path)
 
     predict_and_show(model, test_dataset, device)
 
-main()
+main(is_pcn=False,is_svm=True)

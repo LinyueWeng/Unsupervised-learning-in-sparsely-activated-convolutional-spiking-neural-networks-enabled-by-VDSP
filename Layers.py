@@ -1,71 +1,106 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
-
-from torch.nn.functional import conv2d,unfold,max_pool2d
+import sys
+from torch.nn.functional import conv2d, max_pool2d, unfold
 from Synapse_Models import Ferroelectric
+import matplotlib.pyplot as plt
+import imageio
+import io
+from Characterization import ModelCharac
 #device_local = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device_local='cpu'
+device_local = 'cpu'
+
+Timesteps=15
 
 class CsnnLayer:
-    ## convolutional layer for spiking neural network ##
-    ## standard convolutional layer with outputs: output_potential and output_spike, all in the shape of [timesteps, output_channels, output_h, output_w]##
-    def __init__(self,input_shape,
+    def __init__(self,
+                 input_shape,
                  output_channels,
                  kernel_size=7,
                  stride=1,
                  padding=3,
                  lr=0.01,
                  f_dep=2,
-                 timesteps=15,
-                 w_min=0,w_max=1,
-                 v_rest=0,
-                 v_thresh=10,
-                 v_reset=-1,
-                 r_inhib=3,
-                 weight_mean=0.8,weight_std=0.05,
+                 timesteps=Timesteps,
+                 w_min=0, w_max=1,
+                 v_rest=0, v_thresh=10,v_reset=-1,
+                 r_inhib=3, n_winners=7,
+                 weight_mean=0.8, weight_std=0.05,
+                 sfp=1.138,sfd=1.30,
+                 v=1.0,
                  device=device_local,
-                 synapse_model='linear'
-                 ):
+                 synapse_model='Softbound'):
 
-        self.device=device
-        self.batch_size,self.input_c,self.input_h,self.input_w=input_shape
+        self.device = torch.device(device) if isinstance(device, str) else device
+        self.batch_size, self.input_c, self.input_h, self.input_w = input_shape
         self.output_channels = output_channels
         self.kernel_size = kernel_size
         self.stride = stride
         self.padding = padding
         self.timesteps = timesteps
-        self.v_rest = v_rest
-        self.v_thresh = v_thresh
-        self.v_reset = v_reset
-        self.w_min = w_min
-        self.w_max = w_max
         self.r_inhib = r_inhib
-        self.lr=lr
-        self.f_dep=f_dep
-        self.synapse_model=synapse_model
+        self.lr = lr
+        self.n_winners = n_winners
+        self.sfp = sfp
+        self.v = v
+        self.sfd = sfd
 
-        self.synapse_model_dictionary={'Ferroelectric':Ferroelectric}
 
-        self.weight=torch.normal(mean=weight_mean, std=weight_std,size=(self.output_channels,self.input_c,self.kernel_size,self.kernel_size)).to(device)
-        self.weight=torch.clamp(self.weight, min=self.w_min, max=self.w_max).to(self.device)
+        self.v_rest = torch.tensor(v_rest, dtype=torch.float32, device=self.device)
+        self.v_thresh = torch.tensor(v_thresh, dtype=torch.float32, device=self.device)
+        self.v_reset = torch.tensor(v_reset, dtype=torch.float32, device=self.device)
+        self.w_min = torch.tensor(w_min, dtype=torch.float32, device=self.device)
+        self.w_max = torch.tensor(w_max, dtype=torch.float32, device=self.device)
+        self.f_dep = torch.tensor(f_dep, dtype=torch.float32, device=self.device)
+
+        self.vdsp_cnt = 0
+        self.update_lr_cnt = 500
+        self.max_lr = 0.1
+        self.adaptive_lr = True
+
+        self.synapse_model_dictionary = {'Ferroelectric': Ferroelectric}
+        self.synapse_model = synapse_model
+        print(self.synapse_model)
+        charac_model=ModelCharac(self.synapse_model)
+        self.model_charac = charac_model()
+
+        self.weight = torch.normal(mean=weight_mean, std=weight_std,
+                                   size=(self.output_channels, self.input_c, self.kernel_size, self.kernel_size)).to(self.device)
+        self.weight = torch.clamp(self.weight, min=self.w_min, max=self.w_max)
 
         self.output_h = (self.input_h - self.kernel_size + 2 * self.padding) // self.stride + 1
         self.output_w = (self.input_w - self.kernel_size + 2 * self.padding) // self.stride + 1
 
-        self.potential = torch.ones(self.output_channels,self.output_h,self.output_w,device=self.device)*self.v_rest
+        self.potential = None
+        self.activation = None
+        self.vdsp_neurons = None
 
-        self.activation = torch.ones(self.output_channels,self.output_h,self.output_w).bool().to(self.device)
+        self.target_channel = 0
+        self.delta_weight_list = []
+        self.frames = []
+        self.update_counter=0
 
+    def __call__(self, input_potential, input_spike, is_training=False):
+        if not isinstance(input_potential, torch.Tensor):
+            input_potential = torch.tensor(input_potential, dtype=torch.float32, device=self.device)
+        else:
+            input_potential = input_potential.to(self.device)
 
-    def __call__(self,input_potential,input_spike,is_training=False,lr=0.01):
+        if not isinstance(input_spike, torch.Tensor):
+            input_spike = torch.tensor(input_spike, dtype=torch.float32, device=self.device)
+        else:
+            input_spike = input_spike.to(self.device)
+
         self.reset_state()
-        self.lr=lr
-        if input_spike.dim()==3:
-            input_spike=input_spike.unsqueeze(0)
-        if input_potential.dim()==3:
-            input_potential=input_potential.unsqueeze(0)
-        timestep,c,h,w=input_spike.shape
+
+
+        if input_spike.dim() == 3:
+            input_spike = input_spike.unsqueeze(0)
+        if input_potential.dim() == 3:
+            input_potential = input_potential.unsqueeze(0)
+
+        timestep, c, h, w = input_spike.shape
 
         all_potential_updates = conv2d(
             input_spike.float(),
@@ -82,170 +117,226 @@ class CsnnLayer:
 
             self.potential[self.activation] += potential_update[self.activation]
 
+            spike_mask = self.potential > self.v_thresh
             output_spike = torch.zeros_like(self.potential, dtype=torch.bool, device=self.device)
-            spike_mask = self.potential >= self.v_thresh
 
             if spike_mask.any():
-                winner = self.lateral_inhibition(spike_mask)
-
-                self.potential[spike_mask] = self.v_reset
-                self.activation[spike_mask] = False
-
-                output_spike[winner] = True
+                output_spike = self.lateral_inhibition_forward(spike_mask)
 
                 if is_training:
-                    self.vsdp(input_potential[t], input_spike[t], winner)
+                    winner_mask = self.get_vdsp_winners_mask()
+                    delta_weight = 0
+                    if winner_mask.any():
+                        delta_weight=self.vsdp_batched(input_potential[t], input_spike[t], winner_mask)
+                    """
+                    Interpretability research. Unleash the next 2 functions to see the corresponding weight evolution.
+                    one function a time only
+                    """
+                    #self.see_delta_weight_evolve(delta_weight)
+                    #self.see_weight_frame()
+
+                self.potential[output_spike] = self.v_reset
+                self.activation[output_spike] = False
 
             output_spike_list.append(output_spike.clone())
             output_potential_list.append(self.potential.clone())
 
         return torch.stack(output_potential_list), torch.stack(output_spike_list)
 
-    def lateral_inhibition(self,spike_mask):
-        ##use Fast NMS and pooling operator to speed up the lateral inhibition process (mainly for GPU)##
+    def lateral_inhibition_forward(self, spike_mask):
+        max_pots, max_indices = self.potential.max(dim=0, keepdim=True)
+        any_spike = spike_mask.any(dim=0, keepdim=True)
 
-        winner = torch.zeros_like(self.potential).bool().to(self.device)
-        spike_c,spike_h,spike_w=torch.nonzero(spike_mask,as_tuple=True)
-        spike_potential=self.potential[spike_c,spike_h,spike_w]
-        argsort_spike_mask = torch.argsort(spike_potential,descending=True).to(self.device)
-        C = spike_c[argsort_spike_mask]
-        H = spike_h[argsort_spike_mask]
-        W = spike_w[argsort_spike_mask]
-        num_spikes = len(C)
+        output_spike = torch.zeros_like(spike_mask, device=self.device)
+        output_spike.scatter_(0, max_indices, any_spike)
 
-        if num_spikes > 0:
-            keep = torch.ones(num_spikes, dtype=torch.bool, device=self.device)
+        inhibited_mask = any_spike & ~output_spike
+        self.potential[inhibited_mask] = self.v_rest
+        self.activation[inhibited_mask] = False
 
-            for i in range(num_spikes):
-                if not keep[i]:
-                    continue
+        return output_spike
 
-                conflict_c = (C[i + 1:] == C[i])
+    def get_vdsp_winners_mask(self):
+        winner_mask = torch.zeros_like(self.potential, dtype=torch.bool, device=self.device)
+        pots_tmp = self.potential * self.vdsp_neurons
 
-                conflict_hw = (torch.abs(H[i + 1:] - H[i]) <= self.r_inhib) & \
-                              (torch.abs(W[i + 1:] - W[i]) <= self.r_inhib)
+        for _ in range(self.n_winners):
+            max_val = pots_tmp.max()
+            if max_val <= self.v_thresh:
+                break
 
-                keep[i + 1:][conflict_c | conflict_hw] = False
+            flat_idx = torch.argmax(pots_tmp).item()
+            c = flat_idx // (self.output_h * self.output_w)
+            rem = flat_idx % (self.output_h * self.output_w)
+            h = rem // self.output_w
+            w = rem % self.output_w
 
-            win_c = C[keep]
-            win_h = H[keep]
-            win_w = W[keep]
+            winner_mask[c, h, w] = True
 
-            winner[win_c, win_h, win_w] = True
+            h_start = max(0, h - self.r_inhib)
+            h_end = min(self.output_h, h + self.r_inhib + 1)
+            w_start = max(0, w - self.r_inhib)
+            w_end = min(self.output_w, w + self.r_inhib + 1)
 
-            self.activation[win_c] = False
-            self.potential[win_c] = self.v_reset
+            pots_tmp[:, h_start:h_end, w_start:w_end] = 0.0
+            pots_tmp[c, :, :] = 0.0
 
-            spatial_mask = torch.zeros((self.output_h, self.output_w), device=self.device)
-            spatial_mask[win_h, win_w] = 1.0
+        return winner_mask
 
-            if self.r_inhib > 0:
-                kernel_size = 2 * self.r_inhib + 1
-                expanded_mask = max_pool2d(
-                    spatial_mask.unsqueeze(0).unsqueeze(0),
-                    kernel_size=kernel_size,
-                    stride=1,
-                    padding=self.r_inhib
-                ).squeeze(0).squeeze(0).bool()
-            else:
-                expanded_mask = spatial_mask.bool()
+    def vsdp_batched(self, input_potential_t, input_spike_t, winner_mask):
+        win_c, win_h, win_w = torch.nonzero(winner_mask, as_tuple=True)
+        N = len(win_c)
+        if N == 0: return
 
-            self.activation[:, expanded_mask] = False
-            self.potential[:, expanded_mask] = self.v_reset
+        self.vdsp_cnt += N
+        if self.adaptive_lr:
+            old_period = (self.vdsp_cnt - N) // self.update_lr_cnt
+            new_period = self.vdsp_cnt // self.update_lr_cnt
+            if new_period > old_period:
+                self.lr = min(self.lr * (2 ** (new_period - old_period)), self.max_lr)
 
-        return winner
+        lr_t = torch.tensor(self.lr, dtype=torch.float32, device=self.device)
 
-    def vsdp(self, input_potential, input_spike, winner):
+        pad = self.padding
+        spk_unfold = unfold(input_spike_t.unsqueeze(0).float(), kernel_size=self.kernel_size, stride=self.stride,
+                              padding=pad)
+        pot_unfold = unfold(input_potential_t.unsqueeze(0).float(), kernel_size=self.kernel_size, stride=self.stride,
+                              padding=pad)
 
-        winner_c, winner_h, winner_w = torch.nonzero(winner, as_tuple=True)
-        if len(winner_c) == 0:
-            return 0
+        spatial_indices = (win_h * self.output_w + win_w).long()
+        win_spikes = spk_unfold[0, :, spatial_indices].T.view(N, self.input_c, self.kernel_size, self.kernel_size)
+        win_pots = pot_unfold[0, :, spatial_indices].T.view(N, self.input_c, self.kernel_size, self.kernel_size)
 
-        input_spike_unfolded = unfold(input_spike.unsqueeze(0).float(),
-                                      kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
-        input_pot_unfolded = unfold(input_potential.unsqueeze(0).float(),
-                                    kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
+        w_winners = self.weight[win_c]
 
-        N = len(winner_c)
-        if N == 0:
-            return self.weight
-
-        receptive_indices = winner_h * self.output_w + winner_w
-
-        win_spikes = input_spike_unfolded[0, :, receptive_indices].T.view(
-            N, self.input_c, self.kernel_size, self.kernel_size)
-        win_pots = input_pot_unfolded[0, :, receptive_indices].T.view(
-            N, self.input_c, self.kernel_size, self.kernel_size)
-
-        w_winners = self.weight[winner_c]
-
-        if self.synapse_model=='linear':
-##here we use the simplified linear updating formula of the paper to calculate the weight update as default##
-            cond_pot = win_spikes > 0  # LTP
+        if self.synapse_model == 'Softbound':
+            cond_pot = win_spikes > 0
             w_factor = w_winners * (self.w_max - w_winners)
-
-            norm_pots = win_pots / self.v_thresh
-            g_dep = self.f_dep - norm_pots
+            g_dep = self.f_dep - (win_pots / self.v_thresh)
 
             delta_weights = torch.where(
                 cond_pot,
-                w_factor * self.lr,  # LTP
-                w_factor * g_dep * self.lr  # LTD
+                w_factor * 1.0 * lr_t,
+                -w_factor * g_dep * lr_t
             )
-        elif synapse_model:=self.synapse_model_dictionary.get(self.synapse_model):
-            cond_pot=win_spikes>0
-            synapse_model_instance=synapse_model(w_winners)
-            delta_weights=synapse_model_instance(win_pots,self.v_thresh,cond_pot)
+        elif synapse_model_class := self.synapse_model_dictionary.get(self.synapse_model):
+            cond_pot = win_spikes > 0
+            synapse_model_instance = synapse_model_class(w_winners,v_ref=self.v,sf_p=self.sfp,sf_d=self.sfd,**self.model_charac)
+            win_pots = torch.clamp(win_pots, min=0.0)
+            delta_weights = synapse_model_instance(win_pots, self.v_thresh, cond_pot)
         else:
-            raise ValueError(f"synapse model {self.synapse_model} not found")
+            raise ValueError(f"Synapse model {self.synapse_model} not found")
 
-##end of weight update formula##
-
-        self.weight.index_add_(dim=0, index=winner_c, source=delta_weights)
-
+        self.weight.index_add_(0, win_c, delta_weights)
         self.weight.clamp_(self.w_min, self.w_max)
 
-        if N > 0:
-            print(f"Total Delta: {delta_weights.sum().item():.6f} "
-                  f"(LTP: {delta_weights[cond_pot].sum():.6f}, "
-                  f"LTD: {delta_weights[~cond_pot].sum():.6f})")
+        self.vdsp_neurons[win_c, :, :] = False
 
-        return self.weight
+        spatial_mask = torch.zeros((1, 1, self.output_h, self.output_w), dtype=torch.float32, device=self.device)
+        spatial_mask[0, 0, win_h, win_w] = 1.0
 
-    def input_spike_generator(self,input_potential):
-        input_spike=input_potential>=self.v_thresh
-        if not isinstance(input_spike,torch.Tensor):
-            input_spike=torch.tensor(input_spike.float()).to(self.device)
+        if self.r_inhib > 0:
+            kernel_size = 2 * self.r_inhib + 1
+            dilated_mask = max_pool2d(spatial_mask, kernel_size=kernel_size, stride=1, padding=self.r_inhib)
+            dilated_mask = dilated_mask.squeeze(0).squeeze(0).bool()
+        else:
+            dilated_mask = spatial_mask.squeeze(0).squeeze(0).bool()
+
+        self.vdsp_neurons[:, dilated_mask] = False
+
+        return delta_weights
+
+    def input_spike_generator(self, input_potential):
+        input_spike = (input_potential >= self.v_thresh).float()
         if input_spike.dim() == 3:
             input_spike = input_spike.unsqueeze(0)
         return input_spike
 
-    def ttfs_inputlayer(self,image_tensors):
+    def ttfs_inputlayer(self, image_tensors):
+        if not isinstance(image_tensors, torch.Tensor):
+            image_tensors = torch.tensor(image_tensors, dtype=torch.float32, device=self.device)
+        else:
+            image_tensors = image_tensors.to(self.device)
 
         if image_tensors.dim() == 4:
             batch_size, image_c, image_h, image_w = image_tensors.shape
-
         elif image_tensors.dim() == 3:
             image_c, image_h, image_w = image_tensors.shape
-
         else:
-            raise ValueError(f"input dimension error: {image_tensors.shape}")
+            raise ValueError(f"Input dimension error: {image_tensors.shape}")
 
-        images_spiketime = torch.floor((1 - image_tensors) * self.timesteps).to(self.device)
-        input_potential = torch.zeros(self.timesteps, image_c, image_h, image_w).to(self.device)
-        for i in range(self.timesteps):
-            input_potential[i] = (i+1)*self.v_thresh/(images_spiketime+1)
+        images_spiketime = torch.floor((1.0 - image_tensors) * self.timesteps)
 
-        input_spike=self.input_spike_generator(input_potential)
-        return input_potential,input_spike
+        steps = torch.arange(1, self.timesteps + 1, dtype=torch.float32, device=self.device).view(-1, 1, 1, 1)
+        input_potential = steps * self.v_thresh / (images_spiketime + 1.0)
+        input_potential = torch.clamp(input_potential, max=self.v_thresh.item())
+        input_spike = self.input_spike_generator(input_potential)
+        return input_potential, input_spike
 
     def reset_state(self):
-        self.potential = torch.ones(self.output_channels, self.output_h, self.output_w,device=self.device) * self.v_rest
-        self.activation = torch.ones(self.output_channels, self.output_h, self.output_w).bool().to(self.device)
+        self.potential = torch.ones(self.output_channels, self.output_h, self.output_w, dtype=torch.float32,
+                                    device=self.device) * self.v_rest
+        self.activation = torch.ones(self.output_channels, self.output_h, self.output_w, dtype=torch.bool,
+                                     device=self.device)
+        self.vdsp_neurons = torch.ones(self.output_channels, self.output_h, self.output_w, dtype=torch.bool,
+                                       device=self.device)
 
-    def get_output_size(self):#if you connect it to readout layer, use this function to get the input size of the pcn layer
-        return self.output_channels*self.output_h*self.output_w
+    def get_output_size(self):
+        return self.output_channels * self.output_h * self.output_w
 
+    def see_delta_weight_evolve(self, delta_weight):
+        if isinstance(delta_weight, torch.Tensor):
+            current_val = delta_weight.mean().item()
+        else:
+            current_val = float(delta_weight)
+        self.delta_weight_list.append(current_val)
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(self.delta_weight_list, color='blue', marker='o', markersize=3)
+        plt.title(f"Delta Weight Evolution (Step {len(self.delta_weight_list)})")
+        plt.xlabel("Timesteps")
+        plt.ylabel("Sum of Delta Weights")
+        plt.grid(True)
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        frame = imageio.v2.imread(buf)
+        self.frames.append(frame)
+        plt.close()
+
+        if len(self.delta_weight_list) == 10*self.timesteps:
+            gif_path = 'delta_evolution.gif'
+            imageio.mimsave(gif_path, self.frames, fps=5)
+            print(f"GIF saved to: {gif_path}")
+            input("Weight tracking image saved. Press Enter to exit...")
+            sys.exit()
+
+    def see_weight_frame(self,):
+
+        self.update_counter += 1
+
+        if self.update_counter % 10 != 0:
+            return
+        w_map = self.weight[0, 0].cpu().numpy()
+
+        fig, ax = plt.subplots()
+        im = ax.imshow(w_map, cmap='viridis', interpolation='nearest')
+        plt.colorbar(im)
+        ax.set_title(f"Weight Frame {len(self.frames) + 1}")
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        self.frames.append(imageio.v2.imread(buf))
+        plt.close()
+
+        if len(self.frames) >= 1000:
+            gif_path = 'weight_evolution_grid.gif'
+            imageio.mimsave(gif_path, self.frames, fps=50)
+            print(f"\nGIF saved to: {gif_path}")
+
+            sys.exit()
 
 class SnnPooling:
     ## max pooling layer for spiking neural network ##

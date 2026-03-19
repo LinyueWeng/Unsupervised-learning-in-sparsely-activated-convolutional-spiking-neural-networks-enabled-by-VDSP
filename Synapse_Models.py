@@ -3,7 +3,7 @@ import torch
 class Ferroelectric:
     def __init__(self,
                  weight,
-                 sf_p=1.04,
+                 sf_p=1.0385,
                  sf_d = 1.30,
                  gamma_p = 1.62,
                  gamma_d = 1.79,
@@ -11,6 +11,7 @@ class Ferroelectric:
                  alpha_d = 0.38,
                  theta_p = -0.55,
                  theta_d = 0.47,
+                 v_ref=1.02
                  ):
         self.gamma_p = gamma_p
         self.gamma_d = gamma_d
@@ -21,14 +22,17 @@ class Ferroelectric:
         self.sf_p = sf_p
         self.sf_d = sf_d
         self.weight=weight
+        self.v_ref=v_ref
+        torch.clamp(self.weight, min=0.0, max=1.0)
 
     def __call__(self,potential,potential_threshold,cond_pot):
         v_p=(potential/potential_threshold)*self.sf_p*self.theta_p
-        v_d=(potential/potential_threshold)*self.sf_d*self.theta_d
+        v_d=(self.v_ref-potential/potential_threshold)*self.sf_d*self.theta_d
         fp,fd=self.f_v(v_p,v_d)
         gp,gd=self.g_w(v_p,v_d)
         delta_weight_ltp=fp*gp
         delta_weight_ltd=fd*gd
+        #print(f"delta_weight_ltp: {delta_weight_ltp.sum().item():.6f}")
         return torch.where(cond_pot,delta_weight_ltp,-delta_weight_ltd)
 
     def f_v(self,v_p,v_d):
