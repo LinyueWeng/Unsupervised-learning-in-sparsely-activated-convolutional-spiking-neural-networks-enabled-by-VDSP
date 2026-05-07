@@ -79,8 +79,8 @@ Both models support D2D and C2C variation injection via configurable noise coeff
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/LinyueWeng/Unsupervised-learning-in-sparsely-activated-convolutional-spiking-neural-networks-enabled-by-VDSP.git
-cd Unsupervised-learning-in-sparsely-activated-convolutional-spiking-neural-networks-enabled-by-VDSP
+git clone https://github.com/LinyueWeng/Comparative-Analysis-of-Ferroelectric-Models.git
+cd Comparative-Analysis-of-Ferroelectric-Models
 
 # 2. Create a virtual environment (recommended)
 python -m venv .venv
