@@ -265,6 +265,8 @@ The script prints the fitted parameter values to the terminal and saves them as 
 
 ---
 
+Note: You do not have to run this before run Training.py. This is just to show the visualized results of characterization, it will be automatically executed when running Training.py.
+
 ### 5.4 Configuring Device Variation Parameters
 
 Variation coefficients are configured in `Characterization.py` inside the `MODEL_CONFIGS` dictionary (starting around line 18). All coefficients are **relative standard deviations** (e.g., `0.05` means 5% noise on the parameter value).
