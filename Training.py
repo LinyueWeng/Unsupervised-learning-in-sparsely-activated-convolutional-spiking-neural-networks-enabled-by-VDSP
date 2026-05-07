@@ -72,7 +72,7 @@ def main(train_csnn,v=1.0,sfp=1.138,sfd=1.9,convergence_rate=0.1,train_svm=False
         as a percentage.
     """
 
-    if train_csnn:
+    if train_git add .gitignorecsnn:
         is_feature_extraction=True #if you retrained CSNN, you must extract features using current CSNN!!!
 
 
@@ -83,7 +83,6 @@ def main(train_csnn,v=1.0,sfp=1.138,sfd=1.9,convergence_rate=0.1,train_svm=False
 
     os.makedirs("checkpoints_CSNN", exist_ok=True)
     os.makedirs("checkpoints_SVM", exist_ok=True)
-    os.makedirs("checkpoints_PCN", exist_ok=True)
     os.makedirs("extracted_feature", exist_ok=True)
 
     model = CSNN_Layerwise(device=device, synapse_model=SYNAPSE_MODEL,
