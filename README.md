@@ -195,7 +195,7 @@ df = df.rename(columns={
 
 #### Data normalisation
 
-The `normalize_data()` method in `Characterization.py` preprocesses your raw file and saves a normalised copy as `data/YOUR_FILE_normalized.csv`. This step runs automatically on first use. If you modify your raw data, delete the `_normalized.csv` file to force re-normalisation.
+The `normalize_data()` method in `Characterization.py` preprocesses your raw file and saves a normalised copy as `data/YOUR_FILE_normalized.csv`. This step runs automatically on first use. If you modify your raw data, set `force_recompute == True` or delete the `_normalized.csv` file to force re-normalisation.
 
 ---
 
