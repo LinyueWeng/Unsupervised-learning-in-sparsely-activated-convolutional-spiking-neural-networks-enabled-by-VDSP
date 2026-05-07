@@ -1,101 +1,481 @@
-# Unsupervised-learning-in-sparsely-activated-convolutional-spiking-neural-networks-enabled-by-VDSP
+# Unsupervised Learning in Sparsely Activated Convolutional Spiking Neural Networks Enabled by VDSP
 
-Unofficial PyTorch Implementation: Unsupervised CSNN with VDSP
-This repository contains a PyTorch-based refactoring and reproduction of the paper:
+A simulation framework for evaluating **neuromorphic memristor devices** in a convolutional spiking neural network (CSNN) trained via **Voltage-Dependent Synaptic Plasticity (VDSP)**. The network is trained unsupervised and evaluated on MNIST / Fashion-MNIST using a downstream SVM classifier. The framework also quantifies how device non-idealities — **device-to-device (D2D)** and **cycle-to-cycle (C2C) variations** — impact classification accuracy.
 
-"Unsupervised and efficient learning in sparsely activated convolutional spiking neural networks enabled by voltage-dependent synaptic plasticity"
+---
 
+## Table of Contents
 
-Goupy et al., Neuromorphic Computing and Engineering (2023) 
+1. [Project Overview](#1-project-overview)
+2. [Repository Structure](#2-repository-structure)
+3. [Installation](#3-installation)
+4. [Quick Start — Reproduce the Paper Results](#4-quick-start--reproduce-the-paper-results)
+5. [User Guide: Testing Your Own Device Data](#5-user-guide-testing-your-own-device-data)
+   - 5.1 [Preparing Your Device Data File](#51-preparing-your-device-data-file)
+   - 5.2 [Choosing a Synapse Model](#52-choosing-a-synapse-model)
+   - 5.3 [Running Device Characterization](#53-running-device-characterization)
+   - 5.4 [Configuring Device Variation Parameters](#54-configuring-device-variation-parameters)
+   - 5.5 [Training the CSNN with Your Device](#55-training-the-csnn-with-your-device)
+   - 5.6 [Co-Design Algorithm (Exponential Model Only)](#56-co-design-algorithm-exponential-model-only)
+   - 5.7 [Evaluating D2D and C2C Robustness](#57-evaluating-d2d-and-c2c-robustness)
+6. [Parameter Reference](#6-parameter-reference)
+7. [Workflow Diagram](#7-workflow-diagram)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Expected Results](#9-expected-results)
 
-This implementation focuses on reproducing the Voltage-Dependent Synaptic Plasticity (VDSP) rule in a Convolutional Spiking Neural Network (CSNN) using Single-Spike Integrate-and-Fire (SSIF) neurons, experimenting different architectures for various contexts.
+---
 
-Visualization of learned SNN weights (Binary Features) after training on MNIST.
+## 1. Project Overview
 
-🚀 Key Features & Modifications
+This framework implements a two-stage pipeline:
 
-This project is not a direct translation; it includes several architectural experimental changes to test performance and usability in PyTorch:
+**Stage 1 — Unsupervised CSNN Training (VDSP)**  
+A single-layer convolutional SNN is trained without labels using voltage-dependent synaptic plasticity. Weight updates are computed directly from device physics: the synapse model translates the neuron membrane potential into a write voltage, which drives the memristive weight update according to the characterised device model.
 
-1. Refactored Reproduction
-This codebase faithfully reproduces the algorithm described in Goupy et al. (2023), specifically the unsupervised learning phase using the hardware-friendly VDSP rule and the readout layer using a Linear SVM.
+**Stage 2 — Supervised Readout (Linear SVM)**  
+After VDSP training, the network's learned spike representations are extracted as features and fed to a Linear SVM for classification on MNIST or Fashion-MNIST.
 
-2. Layer-wise vs. Step-wise Processing
-Unlike many SNN implementations that process the entire network one time-step at a time (Step-wise), this implementation utilizes Layer-wise processing ( although it is not necessarily more efficient or hardware friendly).
+Two device (synapse) models are supported:
 
-The entire temporal dimension (timesteps) is calculated for one layer before passing the full spike train to the next layer.
+| Model Name | Description |
+|---|---|
+| `Ferroelectric` | Exponential switching model — fits a ΔW vs. V curve with an exponential window function |
+| `Ferroelectric_Tanh` | Tanh resistance-envelope model — fits upper/lower R vs. V envelopes |
 
-This approach possibly leverages PyTorch's vectorization capabilities for faster training and inference( if the training process could be adapted to multiple batch size).
+Both models support D2D and C2C variation injection via configurable noise coefficients.
 
-3. Native PyTorch & CUDA Support
-Unified Data Structure: All data, including potentials and spikes, are handled as torch.Tensor objects.
+---
 
-GPU Acceleration: The code includes robust device management. Simply toggle device='cuda' to accelerate the unsupervised training and feature extraction on your GPU( however, training with GPU is slower in the current state, given the network still needs to be extended to process batch size bigger than 1).
+## 2. Repository Structure
 
-4. Standardized CSNN Layers
-The code defines modular classes for the Spiking Convolutional Layer and Spiking Pooling Layer.
+```
+.
+├── config.py              ← Global switches: SYNAPSE_MODEL, TIMESTEPS, device
+├── Training.py            ← Entry point: train CSNN + SVM, evaluate accuracy
+├── Model.py               ← CSNN_Layerwise: architecture, SVM wrapper
+├── Layers.py              ← CsnnLayer and SnnPooling implementations
+├── Synapse_Models.py      ← Ferroelectric and Ferroelectric_Tanh synapse classes
+├── Characterization.py    ← Curve-fitting of raw device data → model parameters
+├── Solver.py              ← Co-design EM algorithm (Exponential model)
+├── utils.py               ← DoG transform, helper functions
+├── D2D_ploting.py         ← Reproduce D2D variation figures (Fig. 4.7 & 4.8)
+├── C2C_plotting.py        ← Reproduce C2C variation figures
+├── data/                  ← Place your raw device data here (*.dat)
+│   └── ABS_03_summary.dat ← Example device data (included)
+└── figures/               ← Output directory for all saved plots
+```
 
-Standardized I/O: Both layers accept and return a standard tuple: (potential_tensor, spike_tensor).
+---
 
-Robust Pooling: The pooling layer correctly handles the "Single-Spike" constraint, ensuring that the refractory period logic is preserved alongside the max-pooling operation.
+## 3. Installation
 
-5. Visualization Tools
-Includes a dedicated Visualize.py script to generate:
+### Requirements
 
-Weight Grids: Visualizes the learned convolutional kernels, demonstrating the "binary weight" phenomenon described in the paper. 
-(Examples stored in folder "results").
+- Python 3.9+
+- PyTorch (CPU or CUDA)
+- See `requirements.txt` for pinned versions
 
-Prediction Demos: Runs inference on random test samples and displays the input image alongside the predicted label.
+### Steps
 
-📂 Project Structure
+```bash
+# 1. Clone the repository
+git clone https://github.com/LinyueWeng/Unsupervised-learning-in-sparsely-activated-convolutional-spiking-neural-networks-enabled-by-VDSP.git
+cd Unsupervised-learning-in-sparsely-activated-convolutional-spiking-neural-networks-enabled-by-VDSP
 
-Layers.py: Contains the CsnnLayer (with VDSP logic) and SnnPooling classes.
+# 2. Create a virtual environment (recommended)
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
 
-Model.py: Assembles the CSNN and the Linear SVM readout  into a unified model class. Handles feature extraction and flattening.
+# 3. Install dependencies
+pip install -r requirements.txt
 
-Training.py: Main script for the unsupervised training loop.
+# 4. Create output directories
+mkdir figures
+```
 
-Visualize.py: Loads trained checkpoints to visualize weights and perform inference.
+> **Note on PyTorch version:** `requirements.txt` pins `torch==2.10.0+cu130` (CUDA 13). If you are on CPU only or a different CUDA version, install PyTorch manually from https://pytorch.org/get-started/locally/ before running `pip install -r requirements.txt`.
 
-🛠️ Usage
+---
 
-Prerequisites
-Python 3.x
+## 4. Quick Start — Reproduce the Paper Results
 
-PyTorch( 2.10.0+cu130)
+To run the full pipeline with the included example device data:
 
-scikit-learn (for the SVM readout)
-
-Matplotlib (for visualization)
-
-1. Training the SNN
-Run the training script to learn the convolutional kernels via VDSP.
-
-Bash
+```bash
 python Training.py
+```
 
-The script will automatically download MNIST, apply TTFS encoding, and train the network. Checkpoints are saved to the checkpoints/ directory.
+This will:
+1. Automatically download **Fashion-MNIST** to `./data/` on first run.
+2. Run device characterisation on `data/ABS_03_summary.dat` (or load cached parameters if already computed).
+3. Train the CSNN for 1 VDSP epoch until convergence.
+4. Extract spike features and train a Linear SVM.
+5. Print test accuracy on the Fashion-MNIST test set.
 
-2. Visualization & Prediction
-Once trained, use the visualization script to inspect the learned features and test the model.
+Expected output (Fashion-MNIST, `Ferroelectric_Tanh` model, no variation):
+```
+>>> Test Accuracy: ~88.3%
+```
 
-Bash
-python Visualize.py
-📊 Results
-As described in the original paper, the VDSP rule causes the weights to converge towards binary values (0 or 1).
+To switch to MNIST, open `Training.py` and comment/uncomment:
+```python
+# Fashion-MNIST (default):
+full_dataset = datasets.FashionMNIST(...)
+test_dataset = datasets.FashionMNIST(...)
 
-Learned Weights (This Implementation): The visualization below shows the 7x7 kernels after training. The clear black-and-white patterns indicate that the network has successfully learned to extract edge and shape features from the digit dataset using the modified LTD/LTP rules.
+# MNIST (uncomment these two lines and comment the two above):
+# full_dataset = datasets.MNIST(...)
+# test_dataset = datasets.MNIST(...)
+```
 
-📝 Citation
-If you use this code, please cite the original paper:
+---
 
-Code snippet
-@article{goupy2023unsupervised,
-  title={Unsupervised and efficient learning in sparsely activated convolutional spiking neural networks enabled by voltage-dependent synaptic plasticity},
-  author={Goupy, Gaspard and Juneau-Fecteau, Alexandre and Garg, Nikhil and Balafrej, Ismael and Alibart, Fabien and Frechette, Luc and Drouin, Dominique and Beilliard, Yann},
-  journal={Neuromorphic Computing and Engineering},
-  volume={3},
-  number={1},
-  pages={014001},
-  year={2023},
-  publisher={IOP Publishing}
-}
+## 5. User Guide: Testing Your Own Device Data
+
+This section walks you through the complete workflow for plugging in your own memristor measurement data and evaluating how your device performs in the network.
+
+---
+
+### 5.1 Preparing Your Device Data File
+
+Place your raw measurement file inside the `data/` directory.
+
+**Update the path in `Characterization.py`, line 16:**
+```python
+RAW_DEVICE_DATA_PATH = "data/YOUR_FILE.dat"   # ← change this
+```
+
+#### Required CSV columns
+
+The framework uses `pandas.read_csv` to load your file. The expected columns depend on which synapse model you use:
+
+| Synapse Model | Required Columns | Description |
+|---|---|---|
+| `Ferroelectric` (Exponential) | `V`, `w`, `dw` | Write voltage (V), initial normalized weight [0,1], weight change ΔW |
+| `Ferroelectric_Tanh` | `V`, `Rfinal`, `dR` | Write voltage (V), final resistance (Ω), resistance change ΔR |
+
+Your file may use any delimiter supported by `pandas.read_csv`. If your file is tab-separated or uses a different separator, add `sep='\t'` (or the appropriate separator) inside the `pd.read_csv()` call in `Characterization.py → normalize_data()`.
+
+#### Data normalisation
+
+The `normalize_data()` method in `Characterization.py` preprocesses your raw file and saves a normalised copy as `data/YOUR_FILE_normalized.csv`. This step runs automatically. If you modify your raw data, delete the `_normalized.csv` file to force re-normalisation, or set `force_recompute=True` when calling `ModelCharac`.
+
+---
+
+### 5.2 Choosing a Synapse Model
+
+Open **`config.py`** and set `SYNAPSE_MODEL` to one of the two options:
+
+```python
+# config.py
+
+SYNAPSE_MODEL = "Ferroelectric_Tanh"   # Use tanh resistance-envelope model
+# SYNAPSE_MODEL = "Ferroelectric"       # Use exponential switching model
+```
+
+**Which model should I choose?**
+
+- Use `Ferroelectric_Tanh` if your device measurements give you a hysteresis loop (R vs. V with an upper and lower resistance envelope). This model is more physically interpretable for FTJ/FeFET-type devices.
+- Use `Ferroelectric` if your measurements directly provide the weight-change curve (ΔW vs. V), or if you want to fit an exponential-window VDSP model.
+
+---
+
+### 5.3 Running Device Characterisation
+
+Run the characterisation script to fit your data and visualise the model:
+
+```bash
+python Characterization.py
+```
+
+This will:
+- Load your normalised device data.
+- Fit the model parameters using least-squares curve fitting (`lmfit` / `scipy.optimize.curve_fit`).
+- Save the fitted parameters to `data/params_SYNAPSE_MODEL.csv`.
+- Display and save characterisation figures to the `figures/` directory.
+
+> **Important:** The variable `save_path` on line 12 of `Characterization.py` is currently set to an absolute Windows path from the author's machine. Change it to a relative path before running:
+> ```python
+> save_path = "figures"   # ← change to this
+> ```
+
+**Fit result:**  
+The script prints the fitted parameter values to the terminal and saves them as `data/params_Ferroelectric.csv` or `data/params_Ferroelectric_Tanh.csv`. These cached parameters are loaded automatically on subsequent runs — delete the CSV to force re-fitting.
+
+#### Model parameters explained
+
+**Exponential model (`Ferroelectric`)** — output parameters:
+
+| Parameter | Physical meaning |
+|---|---|
+| `gamma_p` | LTP window exponent (controls saturation near W=1) |
+| `gamma_d` | LTD window exponent (controls saturation near W=0) |
+| `theta_p` | LTP switching threshold voltage |
+| `theta_d` | LTD switching threshold voltage |
+| `alpha_p` | LTP switching rate |
+| `alpha_d` | LTD switching rate |
+
+**Tanh model (`Ferroelectric_Tanh`)** — output parameters:
+
+| Parameter | Physical meaning |
+|---|---|
+| `r_min` | Minimum (on-state) resistance (Ω) |
+| `r_max` | Maximum (off-state) resistance (Ω) |
+| `v0_up` | Voltage scale of the upper (LTD) tanh envelope |
+| `voff_up` | Voltage offset of the upper envelope |
+| `v0_low` | Voltage scale of the lower (LTP) tanh envelope |
+| `voff_low` | Voltage offset of the lower envelope |
+
+---
+
+### 5.4 Configuring Device Variation Parameters
+
+Variation coefficients are configured in `Characterization.py` inside the `MODEL_CONFIGS` dictionary (starting around line 18). All coefficients are **relative standard deviations** (e.g., `0.05` means 5% noise on the parameter value).
+
+#### D2D (device-to-device) variation
+
+```python
+"device_to_device_variation_coefficient": {
+    "gamma_p": 0.0,   # set to e.g. 0.10 for 10% D2D spread on gamma_p
+    "gamma_d": 0.0,
+    "theta_p": 0.0,
+    "theta_d": 0.0,
+    "alpha_p": 0.0,
+    "alpha_d": 0.0
+},
+```
+
+For `Ferroelectric_Tanh`, the keys are `r_min`, `r_max`, `v0_up`, `voff_up`, `v0_low`, `voff_low`.
+
+D2D variation is injected at **initialisation time**: each synapse in the network receives an independently perturbed version of the base parameters. A synapse whose perturbed parameters violate physical constraints (e.g., `gamma_p <= 1`, `theta_p >= 0`) is marked as **defective** — its weight is frozen at 0 and does not participate in learning.
+
+#### C2C (cycle-to-cycle) variation
+
+```python
+"cycle_to_cycle_variation_coefficient_multiplicative": 0.0,  # relative noise on delta_W
+"cycle_to_cycle_variation_coefficient_additive": 0.0,        # absolute noise on delta_W
+```
+
+C2C variation adds Gaussian noise to each weight update at every VDSP step. Set one or both coefficients to a non-zero value (e.g., `0.05`) to simulate stochastic write noise.
+
+---
+
+### 5.5 Training the CSNN with Your Device
+
+After characterisation and variation configuration, run:
+
+```bash
+python Training.py
+```
+
+Key parameters you may want to tune are in **`Training.py`**:
+
+#### Dataset selection (lines ~27–30)
+
+```python
+# Switch between datasets:
+full_dataset = datasets.FashionMNIST(...)   # 10-class clothing (default)
+# full_dataset = datasets.MNIST(...)         # 10-class handwritten digits
+```
+
+#### Main training call (bottom of file, `__main__` block)
+
+```python
+main(
+    train_csnn=True,          # True = retrain CSNN; False = load saved checkpoint
+    sfp=1.138,                # LTP scaling factor (see §5.6 for how to set this)
+    sfd=1.9,                  # LTD scaling factor — EDIT THIS for your device
+    convergence_rate=0.14,    # Stop VDSP when weight polarisation falls below this
+    v=1.02,                   # Reference potential v_ref
+    train_svm=True,           # True = retrain SVM; False = load saved checkpoint
+    is_feature_extraction=True
+)
+```
+
+| Parameter | Where | What it does |
+|---|---|---|
+| `sfd` | `Training.py`, `main()` | LTD write-voltage scaling; the most important parameter to tune for a new device. Start with `sfd = 1.0` and increase until weights converge. |
+| `sfp` | `Training.py`, `main()` | LTP write-voltage scaling; best determined by the co-design algorithm (§5.6). |
+| `convergence_rate` | `Training.py`, `Train_csnn()` | VDSP convergence threshold. Lower values mean more training. Typical range: 0.08–0.20. |
+| `v` | `Training.py`, `main()` | Reference membrane potential v_ref. Affects the amplitude of write pulses. Default: `1.02`. |
+| `TIMESTEPS` | `config.py` | Number of simulation timesteps per image. Default: `20`. |
+
+#### Saving and loading checkpoints
+
+After training, the CSNN weights are saved to:
+```
+snn_full_model_epoch_1.pth          (root directory)
+checkpoints_CSNN/snn_full_model_epoch_1.pth
+```
+
+The SVM model is saved to:
+```
+checkpoints_SVM/SVM_weight.pth
+```
+
+To skip retraining and only evaluate accuracy:
+```python
+main(
+    train_csnn=False,
+    train_svm=False,
+    is_feature_extraction=False
+)
+```
+
+---
+
+### 5.6 Co-Design Algorithm (Exponential Model Only)
+
+For the `Ferroelectric` (Exponential) model, the optimal `sfp` value is found automatically by the **EM-based co-design algorithm** in `Solver.py`. This algorithm iteratively adjusts `sfp` to achieve a target asymmetry ratio between LTP and LTD strengths.
+
+To run the co-design algorithm, set `SYNAPSE_MODEL = "Ferroelectric"` in `config.py`, then run:
+
+```bash
+python Training.py
+```
+
+The relevant parameters in the `__main__` block of `Training.py` are:
+
+```python
+target_beta = 1.05    # Target LTP/LTD asymmetry ratio. Tune if weights do not converge.
+sfd = 1.9             # Fixed LTD scale. Set this first based on your device.
+v_ref = 1.0           # Reference potential.
+initialGuess = 1.03   # Initial sfp estimate.
+w_mean = 0.21         # Expected converged weight mean. Set to None for auto-detection.
+EM_Round = 5          # Number of EM iterations (5 is usually sufficient).
+convergence_rate = 0.14
+```
+
+The algorithm outputs a convergence plot (`EM Algorithm.png`) and automatically uses the final `sfp` value for the subsequent training runs.
+
+> **For the `Ferroelectric_Tanh` model**, co-design is not required. Set `sfp=1.0` (the Tanh model ignores `sfp` internally) and focus on tuning `sfd`.
+
+---
+
+### 5.7 Evaluating D2D and C2C Robustness
+
+After configuring variation coefficients (§5.4) and running `Training.py` at multiple variation strengths, use the plotting scripts to visualise the impact:
+
+```bash
+# D2D variation figures:
+python D2D_ploting.py
+
+# C2C variation figures:
+python C2C_plotting.py
+```
+
+These scripts contain hard-coded accuracy dictionaries from the paper's experiments. To plot your own results, replace the `data` dictionary at the top of each script with your measured accuracies at each variation coefficient level.
+
+---
+
+## 6. Parameter Reference
+
+### `config.py` — Global configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `SYNAPSE_MODEL` | `"Ferroelectric_Tanh"` | Active synapse model. Options: `"Ferroelectric"`, `"Ferroelectric_Tanh"` |
+| `TIMESTEPS` | `20` | Simulation timesteps per input image |
+| `device` | `'cpu'` | Computation device. Set to `"cuda"` for GPU acceleration |
+
+### `Characterization.py` — Device model config
+
+| Location | Variable | Description |
+|---|---|---|
+| Line 12 | `save_path` | Output directory for characterisation figures. **Change to `"figures"` before running.** |
+| Line 16 | `RAW_DEVICE_DATA_PATH` | Path to your raw device measurement file |
+| `MODEL_CONFIGS[...]['variations']` | `device_to_device_variation_coefficient` | Per-parameter D2D noise coefficient (0 = ideal) |
+| `MODEL_CONFIGS[...]['variations']` | `cycle_to_cycle_variation_coefficient_multiplicative` | C2C multiplicative noise coefficient |
+| `MODEL_CONFIGS[...]['variations']` | `cycle_to_cycle_variation_coefficient_additive` | C2C additive noise coefficient |
+
+### `Model.py` — Network architecture
+
+| Parameter | Default | Description |
+|---|---|---|
+| `conv1` output channels | `128` | Number of convolutional filters in layer 1 |
+| `kernel_size` | `7` | Convolution kernel size |
+| `n_winners` | `7` | WTA lateral inhibition radius |
+| `input_shape` | `(1,1,28,28)` | Input shape. **Must be updated if using non-28×28 images.** |
+
+### `Training.py` — Training hyperparameters
+
+| Parameter | Location | Default | Description |
+|---|---|---|---|
+| `sfd` | `main()` argument | `1.9` | LTD voltage scaling factor |
+| `sfp` | `main()` argument | `1.138` | LTP voltage scaling factor |
+| `convergence_rate` | `main()` / `Train_csnn()` | `0.14` | VDSP stop criterion threshold |
+| `v` | `main()` argument | `1.02` | Membrane reference potential v_ref |
+| `VSDP_EPOCHS` | Line ~38 | `1` | Number of full dataset passes for VDSP |
+| SVM training samples | `fit_svm` call | `60000` | Number of training samples for SVM |
+
+---
+
+## 7. Workflow Diagram
+
+```
+Your device data (*.dat)
+        │
+        ▼
+[Characterization.py]
+  curve_fit → data/params_*.csv
+        │
+        ▼
+[config.py]
+  SYNAPSE_MODEL = "Ferroelectric" or "Ferroelectric_Tanh"
+  + variation coefficients in MODEL_CONFIGS
+        │
+        ▼
+[Training.py]
+  STAGE 1: VDSP training (Layers.py + Synapse_Models.py)
+           ↕ weight checkpoints (checkpoints_CSNN/)
+  STAGE 2: Feature extraction + SVM training
+           ↕ SVM checkpoints (checkpoints_SVM/)
+  STAGE 3: Test accuracy printed to terminal
+        │
+        ▼
+[D2D_ploting.py / C2C_plotting.py]
+  Variation robustness plots → figures/
+```
+
+---
+
+## 8. Troubleshooting
+
+**`FileNotFoundError: data/ABS_03_summary.dat`**  
+→ Your device data file is missing or `RAW_DEVICE_DATA_PATH` in `Characterization.py` line 16 is wrong.
+
+**`FileNotFoundError` when saving figures**  
+→ `save_path` in `Characterization.py` line 12 still points to the author's absolute Windows path. Change it to `"figures"`.
+
+**`FileNotFoundError: checkpoints_CSNN/snn_full_model_epoch_1.pth`**  
+→ You called `main(train_csnn=False)` but no checkpoint exists yet. Run with `train_csnn=True` first.
+
+**CSNN weights do not converge (stuck near 0 or 1)**  
+→ `sfd` or `sfp` is mismatched with your device's switching voltages. Try reducing `sfd` toward `1.0` and check that your characterisation fit is reasonable. For the Exponential model, run the co-design algorithm.
+
+**Very low accuracy (near random ~10%)**  
+→ The network may have collapsed (all neurons firing the same pattern). Increase `r_inhib` in `Model.py` or reduce `n_winners`. Also verify that `sfp` and `sfd` are within a reasonable range.
+
+**CUDA errors / want to use GPU**  
+→ The code forces CPU by default. To enable GPU, change `device = 'cpu'` to `device = "cuda"` in both `config.py` and `Model.py` line 6.
+
+**Training is very slow**  
+→ The simulation processes one image at a time and is CPU-bound. Reducing `TIMESTEPS` (e.g., to `10`) or the number of SVM training samples in `Training.py` speeds things up significantly.
+
+---
+
+## 9. Expected Results
+
+| Dataset | Model | Variation | Accuracy |
+|---|---|---|---|
+| Fashion-MNIST | `Ferroelectric_Tanh` | None (c=0) | ~88.3% |
+| Fashion-MNIST | `Ferroelectric` | None (c=0) | ~88.5% |
+| Fashion-MNIST | `Ferroelectric_Tanh` | D2D c=0.25 | ~87.5% |
+| Fashion-MNIST | `Ferroelectric` | D2D c=0.30 | ~87.7% |
+| Fashion-MNIST | `Ferroelectric_Tanh` | D2D c≥0.30 | Bifurcation (some seeds ~55% or ~10%) |
+| Fashion-MNIST | `Ferroelectric` | D2D c=0.50 | ~87% (monotonic degradation) |
+
+The `Ferroelectric` (Exponential) model is significantly **more robust** to D2D variation than the `Ferroelectric_Tanh` model, maintaining functional accuracy even at large variation strengths. The Tanh model exhibits a bifurcation transition near c=0.30 where some random seeds cause catastrophic accuracy collapse.
