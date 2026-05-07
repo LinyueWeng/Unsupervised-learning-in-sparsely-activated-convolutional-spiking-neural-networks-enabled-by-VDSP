@@ -72,7 +72,7 @@ def main(train_csnn,v=1.0,sfp=1.138,sfd=1.9,convergence_rate=0.1,train_svm=False
         as a percentage.
     """
 
-    if train_git add .gitignorecsnn:
+    if train_csnn:
         is_feature_extraction=True #if you retrained CSNN, you must extract features using current CSNN!!!
 
 
