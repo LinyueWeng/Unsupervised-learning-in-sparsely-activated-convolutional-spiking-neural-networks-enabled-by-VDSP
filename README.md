@@ -286,6 +286,10 @@ For `Ferroelectric_Tanh`, the keys are `r_min`, `r_max`, `v0_up`, `voff_up`, `v0
 
 D2D variation is injected at **initialisation time**: each synapse in the network receives an independently perturbed version of the base parameters. A synapse whose perturbed parameters violate physical constraints (e.g., `gamma_p <= 1`, `theta_p >= 0`) is marked as **defective** — its weight is frozen at 0 and does not participate in learning.
 
+#### Defect Control
+
+The criteria to define the defects could be changed if in need. This has to be done in two places: 1. Layer.py: modify `self.defect_mask`; 2. Synapse_Models: modify  `self.defect_mask` in the corresponding model class.
+
 #### C2C (cycle-to-cycle) variation
 
 ```python
@@ -331,11 +335,13 @@ main(
 
 | Parameter | Where | What it does |
 |---|---|---|
-| `sfd` | `Training.py`, `main()` | LTD write-voltage scaling; the most important parameter to tune for a new device. Start with `sfd = 1.0` and increase until weights converge. |
+| `sfd` | `Training.py`, `main()` | LTD write-voltage scaling; the most important parameter to tune for a new device. Start with `sfd = 1.0` and increase until weights converge at a reasonable speed. |
 | `sfp` | `Training.py`, `main()` | LTP write-voltage scaling; best determined by the co-design algorithm (§5.6). |
 | `convergence_rate` | `Training.py`, `Train_csnn()` | VDSP convergence threshold. Lower values mean more training. Typical range: 0.08–0.20. |
 | `v` | `Training.py`, `main()` | Reference membrane potential v_ref. Affects the amplitude of write pulses. Default: `1.02`. |
 | `TIMESTEPS` | `config.py` | Number of simulation timesteps per image. Default: `20`. |
+
+Note: The criteria of "convergence" could be changed if in need. This is done by line 197-215 in Training.py.
 
 #### Saving and loading checkpoints
 
@@ -358,12 +364,12 @@ main(
     is_feature_extraction=False
 )
 ```
-
+Note: if you change any network parameters including decive data, retraining must be done. We recommend always retrain.
 ---
 
 ### 5.6 Co-Design Algorithm (Exponential Model Only)
 
-For the `Ferroelectric` (Exponential) model, the optimal `sfp` value is found automatically by the **EM-based co-design algorithm** in `Solver.py`. This algorithm iteratively adjusts `sfp` to achieve a target asymmetry ratio between LTP and LTD strengths.
+For the `Ferroelectric` (Exponential) model, the optimal `sfp` value is found automatically by the **Iterative co-design algorithm** in `Solver.py`. This algorithm iteratively adjusts `sfp` to achieve a target asymmetry ratio between LTP and LTD strengths.
 
 To run the co-design algorithm, set `SYNAPSE_MODEL = "Ferroelectric"` in `config.py`, then run:
 
@@ -374,18 +380,18 @@ python Training.py
 The relevant parameters in the `__main__` block of `Training.py` are:
 
 ```python
-target_beta = 1.05    # Target LTP/LTD asymmetry ratio. Tune if weights do not converge.
-sfd = 1.9             # Fixed LTD scale. Set this first based on your device.
-v_ref = 1.0           # Reference potential.
-initialGuess = 1.03   # Initial sfp estimate.
-w_mean = 0.21         # Expected converged weight mean. Set to None for auto-detection.
-EM_Round = 5          # Number of EM iterations (5 is usually sufficient).
+target_beta = 1.05    # Target LTP/LTD asymmetry ratio. Tune if in need. We recommend a value slightly higher than 1.0.
+sfd = 1.9             # Fixed LTD scale. Set this first based on your device and dataset to get a reasonable convergence speed.
+v_ref = 1.0           # Reference potential. We recommend always set it to 1.0 with an epsilon to avoid singularity. 1.02 is used by Author.
+initialGuess = 1.03   # Initial sfp estimate. Better guess is prefered for less iterative rounds but not necessary.
+w_mean = 0.21         # Expected converged weight mean. Set to None for auto-detection. We recommend you to run only once and take down the final value and use it. 0.21 is a value verified by Author for Fashion-MNIST and MNIST.
+EM_Round = 5          # Number of iterations (4 or 5 is usually sufficient).
 convergence_rate = 0.14
 ```
 
 The algorithm outputs a convergence plot (`EM Algorithm.png`) and automatically uses the final `sfp` value for the subsequent training runs.
 
-> **For the `Ferroelectric_Tanh` model**, co-design is not required. Set `sfp=1.0` (the Tanh model ignores `sfp` internally) and focus on tuning `sfd`.
+> **For the `Ferroelectric_Tanh` model**, co-design is not required. No need to do anything but just run.
 
 ---
 
@@ -412,8 +418,8 @@ These scripts contain hard-coded accuracy dictionaries from the paper's experime
 | Variable | Default | Description |
 |---|---|---|
 | `SYNAPSE_MODEL` | `"Ferroelectric_Tanh"` | Active synapse model. Options: `"Ferroelectric"`, `"Ferroelectric_Tanh"` |
-| `TIMESTEPS` | `20` | Simulation timesteps per input image |
-| `device` | `'cpu'` | Computation device. Set to `"cuda"` for GPU acceleration |
+| `TIMESTEPS` | `20` | Simulation timesteps per input image | This is a parameter dependent on the dataset. For Fashion-MNIST we set it to 20 and MNIST 15.
+| `device` | `'cpu'` | Computation device. Set to `"cuda"` for GPU |
 
 ### `Characterization.py` — Device model config
 
@@ -429,19 +435,19 @@ These scripts contain hard-coded accuracy dictionaries from the paper's experime
 
 | Parameter | Default | Description |
 |---|---|---|
-| `conv1` output channels | `128` | Number of convolutional filters in layer 1 |
+| `conv1` output channels | `128` | Number of convolutional filters |
 | `kernel_size` | `7` | Convolution kernel size |
 | `n_winners` | `7` | WTA lateral inhibition radius |
-| `input_shape` | `(1,1,28,28)` | Input shape. **Must be updated if using non-28×28 images.** |
+| `input_shape` | `(1,1,28,28)` | Input shape. **Must be updated if using non-28×28 images.** | Specifically, for Grayscale image, set channels to 1 when creating the instance and 3 for RGB.
 
 ### `Training.py` — Training hyperparameters
 
 | Parameter | Location | Default | Description |
 |---|---|---|---|
-| `sfd` | `main()` argument | `1.9` | LTD voltage scaling factor |
-| `sfp` | `main()` argument | `1.138` | LTP voltage scaling factor |
-| `convergence_rate` | `main()` / `Train_csnn()` | `0.14` | VDSP stop criterion threshold |
-| `v` | `main()` argument | `1.02` | Membrane reference potential v_ref |
+| `sfd` | `main()` argument | `1.9` | LTD voltage scaling factor | 1.9 for Fashion-MNIST and 1.3 for MNIST.
+| `sfp` | `main()` argument | `1.138` | LTP voltage scaling factor | Do not modify values here, it will be automatically replaced by the co-design algorithm.
+| `convergence_rate` | `main()` / `Train_csnn()` | `0.14` | VDSP stop criterion threshold | Be careful to change the criteria because it relies on the understanding of the system dynamics.
+| `v` | `main()` argument | `1.02` | Membrane reference potential v_ref | 
 | `VSDP_EPOCHS` | Line ~38 | `1` | Number of full dataset passes for VDSP |
 | SVM training samples | `fit_svm` call | `60000` | Number of training samples for SVM |
 
@@ -473,7 +479,7 @@ Your device data (*.dat)
 [D2D_ploting.py / C2C_plotting.py]
   Variation robustness plots → figures/
 ```
-
+All you have to do is to replace the device data (*.dat), set variation strength and run Training.py.
 ---
 
 ## 8. Troubleshooting
@@ -491,16 +497,16 @@ Your device data (*.dat)
 → You called `main(train_csnn=False)` but no checkpoint exists yet. Run with `train_csnn=True` first.
 
 **CSNN weights do not converge (stuck near 0 or 1)**  
-→ `sfd` or `sfp` is mismatched with your device's switching voltages. Try reducing `sfd` toward `1.0` and check that your characterisation fit is reasonable. For the Exponential model, run the co-design algorithm.
+→ `sfd` or `sfp` is mismatched with your device's switching voltages. Try increasing `sfd` and never below  `1.0` and check that your characterisation fit is reasonable. For the Exponential model, run the co-design algorithm.
 
 **Very low accuracy (near random ~10%)**  
-→ The network may have collapsed (all neurons firing the same pattern). Increase `r_inhib` in `Model.py` or reduce `n_winners`. Also verify that `sfp` and `sfd` are within a reasonable range.
+→ The network may have collapsed. If it happens under very strong variations, it is the expected phenomenon.
 
 **CUDA errors / want to use GPU**  
-→ The code forces CPU by default. To enable GPU, change `device = 'cpu'` to `device = "cuda"` in both `config.py` and `Model.py` line 6.
+→ The code forces CPU by default. To enable GPU, change `device = 'cpu'` to `device = "cuda"` in `config.py`.
 
 **Training is very slow**  
-→ The simulation processes one image at a time and is CPU-bound. Reducing `TIMESTEPS` (e.g., to `10`) or the number of SVM training samples in `Training.py` speeds things up significantly.
+→ The simulation processes one image at a time. The reference speed is: one run by half an hour. Also setting `tau == 1.0` in model.py may increase the speed and gives very close results with `tau == 0.99`.
 
 ---
 
