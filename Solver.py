@@ -1,8 +1,34 @@
 import torch
 import numpy as np
 from tqdm import tqdm
+from torchvision import transforms
+from utils import DoGTransform
+from config import *
+
+transform = transforms.Compose([
+    #DoGTransform(device=device ,kernel_size=7, sigma1=1.0, sigma2=2.0)
+])
 
 class CoDesignSolver:
+    """
+    A solver class for co-design problems involving statistical feature extraction
+    and parameter optimization.
+
+    The class is designed to handle co-design simulations by extracting statistical
+    features such as spike probabilities and computing optimal parameters under
+    specific constraints.
+
+    Note: This class is initially designed for a scenario where the target parameter could be any of v_ref, sfp, and sfd.
+        However, it was later realized that the v_ref is ideally 1.0 and there is no difference setting the target parameter to be sfp or sfd with the other fixed.
+        So it is developed to only handle the case where sfp is the target parameter and sfd is preset.
+        You do not need to change the code under any circumstances unless you want to change the algorithm itself.
+
+    :ivar T: Number of timesteps for computations.
+    :type T: int
+    :ivar stats: Dictionary containing statistical features such as P_spike, P_LTD,
+                 P_LTP, and V_pos_norm.
+    :type stats: dict or None
+    """
     def __init__(self, timesteps=15):
         self.T = timesteps
         self.stats = None
@@ -23,6 +49,7 @@ class CoDesignSolver:
                 if batch_cnt >= num_batches:
                     break
                 img = img.to(device)
+                img = transform(img)
 
                 pixels = img.flatten().cpu().numpy()
                 pixels = np.clip(pixels, 0.0, 1.0)

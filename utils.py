@@ -7,7 +7,12 @@ from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter1d
 import seaborn as sns
 
+save_path = "C:/Users/28218/PycharmProjects/CSNN/figures"
+
 class DoGTransform:
+    """
+    Not used. Please ignore it if you are reproducing.
+    """
     def __init__(self, device='cpu',kernel_size=7, sigma1=1.0, sigma2=2.0):
         self.kernel_size = kernel_size
         self.device = device
@@ -44,57 +49,10 @@ class DoGTransform:
 
         return torch.cat([on_center, off_center], dim=1).squeeze(0)
 
-def accuracy_samples_analysis(data_matrix,metadata):
-    plt.figure(figsize=(12, 7))
-
-    # Get unique group IDs from the first column of the matrix
-    unique_groups = np.unique(data_matrix[:, 0])
-
-    for group_id in unique_groups:
-        group_mask = data_matrix[:, 0] == group_id
-        subset = data_matrix[group_mask]
-
-        x_samples = subset[:, 1]
-        y_means = subset[:, 2]
-        y_stds = subset[:, 3]
-
-        meta = metadata[group_id]
-
-        plt.errorbar(x_samples, y_means, yerr=y_stds,
-                     fmt=meta['marker'] + '-',
-                     color=meta['color'],
-                     label=meta['label'],
-                     capsize=4, linewidth=1.5)
-
-        # for x, y in zip(x_samples, y_means):
-        #     plt.annotate(f'{y:.2f}', (x, y),
-        #                  textcoords="offset points",
-        #                  xytext=(0, meta['offset']),
-        #                  ha='center', fontsize=9,
-        #                  color=meta['color'], fontweight='bold')
-
-    plt.title('Automated Accuracy Plot from Data Matrix', fontsize=14)
-    plt.xlabel('Number of Training Samples', fontsize=12)
-    plt.ylabel('Accuracy (%)', fontsize=12)
-
-    plt.xscale('symlog', linthresh=1000)
-    #tick_values = np.unique(data_matrix[:, 1])
-    tick_values= torch.arange(0,1000,100)
-    tick_values= torch.cat((tick_values,torch.arange(0,10000,1000)))
-    tick_values = torch.cat((tick_values, torch.arange(10000, 60000, 10000)))
-    plt.xticks(tick_values, [str(int(v)) for v in tick_values], rotation=45)
-
-    plt.grid(True, which='both', linestyle='--', alpha=0.5)
-    plt.legend(loc='lower right')
-    plt.ylim(97, 99)
-
-    plt.tight_layout()
-    plt.show()
-
 def plot_weight_histogram(pth_file_path, bins=1000, smooth_sigma=5.0, prominence_threshold=0.08):
     """
     plot the weight histogram of the given checkpoint file, and detect the attractors.
-
+    used only during the project for temporary presentation, not used in the thesis.
     parameters:
     - smooth_sigma: gaussian smooth, normally no need to change
     - prominence_threshold: increase this value to detect attractors with stricter, decrease if you can see attractors but they cannot be detected.
@@ -185,7 +143,17 @@ def plot_weight_histogram(pth_file_path, bins=1000, smooth_sigma=5.0, prominence
     return attractors
 
 def plot_parameter_fitting_grid(experiment_data,overdrive_ratios,beta_values,xlabel,ylabel,title):
-    y_labels = [f"{ov}\n(β≈{b})" for ov, b in zip(overdrive_ratios, beta_values)]
+    """
+    heat map of the parameter fitting grid in the Exponential Model. Fig.4.1
+    :param experiment_data:
+    :param overdrive_ratios:
+    :param beta_values:
+    :param xlabel:
+    :param ylabel:
+    :param title:
+    :return:
+    """
+    y_labels = [f"{ov}\n{b}" for ov, b in zip(overdrive_ratios, beta_values)]
 
     v_refs = sorted(list(experiment_data.keys()))
 
@@ -226,152 +194,10 @@ def plot_parameter_fitting_grid(experiment_data,overdrive_ratios,beta_values,xla
 
     plt.tight_layout()
 
-    plt.savefig('accuracy_heatmap.png')
+    plt.savefig(f"{save_path}/exponential_model_heat_map.pdf", format="pdf", bbox_inches="tight")
+    plt.savefig(f"{save_path}/exponential_model_heat_map.png", dpi=300, bbox_inches="tight", )
     plt.show()
 
-def plot_twiny():
-    v_ref = ['1.0V', '1.2V', '1.5V']
-    samples = [3223, 1045, 421]
-    accuracy = [98.77, 98.58, 98.43]
-
-    fig, ax1 = plt.subplots(figsize=(10, 5))
-
-    plt.rcParams.update({'font.size': 12})
-
-    color_samples = 'tab:blue'
-    lns1 = ax1.plot(v_ref, samples, marker='o', color=color_samples, label='Number of training samples')
-    ax1.set_xlabel('Reference Potential (V)')
-    ax1.set_ylabel('Number of training samples')
-
-    ax2 = ax1.twinx()
-
-    color_acc = 'tab:orange'
-    lns2 = ax2.plot(v_ref, accuracy, linestyle='--', color=color_acc, label='Accuracy')
-    ax2.set_ylabel('Accuracy (%)')
-
-    ax2.set_ylim(min(accuracy) - 0.5, max(accuracy) + 0.5)
-
-    lns = lns1 + lns2
-    labs = [l.get_label() for l in lns]
-    ax1.legend(lns, labs, loc='upper right')
-
-    plt.tight_layout()
-    plt.show()
-
-
-
-weights_path="C:/Users/28218/PycharmProjects/CSNN/checkpoints_CSNN/snn_weight_epoch_1.pth"
-
-data1 = np.array([
-    # Linear (PCN) - Group 0
-    [0, 0, 93.17, 0.69],
-    [0, 126, 96.07, 0.37],
-    [0, 157, 95.97, 0.42],
-    [0, 210, 96.06, 0.30],
-    [0, 566, 96.25, 0.29],
-    [0, 644, 95.74, 0.18],
-    [0, 828, 96.03, 0.32],
-    [0, 1268, 96.00, 0.31],
-
-    # Linear (SVM)% - Group 1
-    [1, 0, 97.30, 0.20],
-    [1, 126, 98.43, 0.13],
-    [1, 157, 98.50, 0.21],
-    [1, 210, 98.66, 0.19],
-    [1, 566, 98.29, 0.13],
-    [1, 644, 98.45, 0.12],
-    [1, 828, 98.50, 0.24],
-    [1, 1268, 98.30, 0.13]
-])#CSNN accuracy with SVM and PCN
-data2 = np.array([
-    # --- Group 2: Linear (PCN)% ---
-    [2, 0,   8.81,  0.67],
-    [2, 1,   87.09, 0.41],
-    [2, 2,   91.30, 0.45],
-    [2, 3,   91.48, 0.27],
-    [2, 5,   93.05, 0.42],
-    [2, 8,   93.58, 0.57],
-    [2, 10,  94.50, 0.47],
-    [2, 15,  94.75, 0.34],
-    [2, 30,  95.07, 0.40],
-    [2, 40,  95.47, 0.31],
-    [2, 50,  96.11, 0.45],
-    [2, 60,  95.33, 0.37],
-    [2, 70,  95.32, 0.44],
-    [2, 80,  95.50, 0.24],
-    [2, 90,  96.08, 0.36],
-    [2, 100, 96.32, 0.33],
-    [2, 150, 96.06, 0.29],
-    [2, 200, 96.10, 0.36]
-])#PCN accuracy with CSNN
-data3 = np.array([
-    [3, 0,     97.32, 0.36],
-    [3, 231,   97.70, 0.26],
-    [3, 990,   98.27, 0.20],
-    [3, 1946,  98.41, 0.18],
-    [3, 2985,  98.29, 0.17],
-    [3, 4609,  98.40, 0.13],
-    [3, 6766,  98.19, 0.22],
-    [3, 14136, 98.11, 0.13],
-    [3, 31712, 98.15, 0.23],
-    [4, 0,     97.34, 0.18],
-    [4,492,98.53,0.15],
-    [4, 589,   98.61, 0.13],
-    [4, 1269,  98.43, 0.20],
-    [4, 2350,  98.63, 0.15],
-    [4, 4639,  98.58, 0.23],
-    [4, 7388,  98.53, 0.22],
-    [4, 13102, 98.41, 0.24],
-    [4, 37763, 98.36, 0.31],
-    [4, 60000, 98.50, 0.27],
-    [1, 0, 97.30, 0.20],
-    [1, 126, 98.43, 0.13],
-    [1, 157, 98.50, 0.21],
-    [1, 210, 98.66, 0.19],
-    [1, 566, 98.29, 0.13],
-    [1, 644, 98.45, 0.12],
-    [1, 828, 98.50, 0.24],
-    [1, 1268, 98.30, 0.13],
-    [1, 1897, 98.49, 0.26],
-    [1, 3468, 98.47, 0.16],
-    [1, 11482, 98.32, 0.24],
-    [1, 15639, 98.29, 0.15],
-
-])#parameter fitting accuracy curve
-group_metadata = {
-    0: {"label": "Softbound (PCN)", "color": "#1f77b4", "marker": "o", "offset": -15},
-    1: {"label": "Softbound (SVM)", "color": "#d62728", "marker": "s", "offset": 10},
-    2: {"label": "Softbound (PCN) - Epochs", "color": "#2ca02c","marker": "^", "offset": 12},
-    3: {"label": "Ferroelectric (SVM, Not Optimal)", "color": "#e377c2", "marker": "d", "offset": 0},
-    4: {"label": "Ferroelectric (SVM, Optimal)", "color": "#2ca02c", "marker": "v", "offset": 0}
-}
-
-
-
-
-data4 = {
-    1.0: {
-        'sfp': [1.0277, 1.06925, 1.108, 1.1385, 1.2077, 1.277, 1.4155],
-        'mean':[98.5440, 98.7280, 98.5200, 98.4600, 98.3920, 98.5800, 98.4360]
-    },
-    1.2: {
-        'sfp': [1.0517, 1.1292, 1.2068, 1.2585, 1.3877, 1.5170, 1.7755],
-        'mean': [98.6880, 98.6440, 98.6000, 98.5160, 98.3720, 98.0080, 98.1440]
-    },
-    1.5: {
-        'sfp': [1.0877, 1.2192, 1.3508, 1.4385, 1.6578, 1.8770, 2.3155],
-        'mean': [98.5640, 98.5000, 98.4880, 98.6600, 98.1560, 98.1080, 98.2920]
-    },
-    1.8: {
-        'sfp': [1.1237, 1.3093, 1.4948, 1.6185, 1.9278, 2.2371, 2.8556],
-        'mean': [98.5240, 98.3000, 98.2680, 98.2600, 98.3600, 98.0240, 98.1240]
-    },
-    2.0: {
-        'sfp': [1.1477, 1.3693, 1.5908, 1.7385, 2.1078, 2.4771, 3.2156],
-        'mean': [98.2080, 98.4800, 98.0200, 98.1160, 97.9060, 97.9780, 97.8280]
-    },
-
-}#heat map of original solution
 
 data5 = {
     1.0: {
@@ -392,19 +218,13 @@ data5 = {
          'sfp': [1.15, 1.1863, 1.2187, 1.24, 1.28, 1.35, 1.4385, 1.55, 1.6578, 1.8, 1.877, 2.05, 2.15, 2.3155],
          'mean': [98.40399932861328, 98.42799377441406, 98.27200317382812, 98.49999237060547, 98.39601135253906, 98.47200775146484, 98.51599884033203, 98.37600708007812, 98.20800018310547, 98.36399841308594, 98.29600524902344, 98.03999328613281, 98.31600189208984, 98.24400329589844]
      },
-    # 1.8: {
-    #     'sfp': [1.1237, 1.3093, 1.4948, 1.6185, 1.9278, 2.2371, 2.8556],
-    #     'mean': [98.5240, 98.3000, 98.2680, 98.2600, 98.3600, 98.0240, 98.1240]
-    # },
-    # 2.0: {
-    #     'sfp': [1.1477, 1.3693, 1.5908, 1.7385, 2.1078, 2.4771, 3.2156],
-    #     'mean': [98.2080, 98.4800, 98.0200, 98.1160, 97.9060, 97.9780, 97.8280]
-    # },
 
-}#heat map of compensated solution
+}# data for Fig.4.1, heat map of compensated solution
+
+
 
 overdrive_values5 = [' ', ' ',' ' ,' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']
-beta_values5 = ['/', '1.2', '1.05', '/', '/', '/', '/', '/', '/', '/', '/', '/', '/', '/']
+beta_values5 = ['', '(β≈1.2)', '(β≈(1.05)', '', '', '', '', '', '', '', '', '', '', '']
 xlabel4='Reference Voltage (V)'
 ylabel4='Overdrive Ratio & $\\beta$ Value'
 title4='Accuracy Mapping: $V_{ref}$ vs. Overdrive ($\\beta$) with $sf_p$ Values'
@@ -413,10 +233,9 @@ title4='Accuracy Mapping: $V_{ref}$ vs. Overdrive ($\\beta$) with $sf_p$ Values'
 
 
 
-
+weights_path="C:/Users/28218/PycharmProjects/CSNN/checkpoints_CSNN/snn_weight_EM.pth"
 if __name__ == "__main__":
-    #accuracy_samples_analysis(data3,group_metadata)
     #plot_weight_histogram(weights_path)
-    #plot_parameter_fitting_grid(data5, overdrive_values5, beta_values5, xlabel4, ylabel4, title4)
-    plot_twiny()
+    plot_parameter_fitting_grid(data5, overdrive_values5, beta_values5, xlabel4, ylabel4, title4)
+
 
