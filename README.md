@@ -1,6 +1,6 @@
 # Comparative Analysis of Ferroelectric Models
 
-A simulation framework for evaluating **neuromorphic memristor devices** in a convolutional spiking neural network (CSNN) trained via **Voltage-Dependent Synaptic Plasticity (VDSP)**. The network is trained unsupervised and evaluated on MNIST / Fashion-MNIST using a downstream SVM classifier. The framework also quantifies how device non-idealities — **device-to-device (D2D)** and **cycle-to-cycle (C2C) variations** — impact classification accuracy.
+A simulation framework for comparing two ferroelectric device models — **Exponential** and **Tanh** — embedded as synapses in a convolutional spiking neural network (CSNN) trained via **Voltage-Dependent Synaptic Plasticity (VDSP)**. The network is trained unsupervised and evaluated on MNIST / Fashion-MNIST using a downstream SVM classifier. The framework also quantifies how device non-idealities — **device-to-device (D2D)** and **cycle-to-cycle (C2C) variations** — impact classification accuracy.
 
 ---
 
@@ -40,7 +40,7 @@ Two device (synapse) models are supported:
 | Model Name | Description |
 |---|---|
 | `Ferroelectric` | Exponential switching model — fits a ΔW vs. V curve with an exponential window function |
-| `Ferroelectric_Tanh` | Tanh resistance-envelope model — fits upper/lower R vs. V envelopes |
+| `Ferroelectric_Tanh` | Tanh resistance-envelope model — fits upper/lower R vs. V envelopes from pulse-switching measurements |
 
 Both models support D2D and C2C variation injection via configurable noise coefficients.
 
@@ -148,20 +148,54 @@ Place your raw measurement file inside the `data/` directory.
 RAW_DEVICE_DATA_PATH = "data/YOUR_FILE.dat"   # ← change this
 ```
 
-#### Required CSV columns
+#### Required file format
 
-The framework uses `pandas.read_csv` to load your file. The expected columns depend on which synapse model you use:
+The framework loads your file using `pandas.read_csv`. The file must be **comma-separated** (`.dat` or `.csv`) with a **header row** as the first line.
 
-| Synapse Model | Required Columns | Description |
+The included example file `data/ABS_03_summary.dat` illustrates the exact format:
+
+```
+pulseAmplitude,deltaRneg(measured at -80mV),RnegInitial,deltaRpos(measured at +80mV),RposInitial
+-2.393,-9233422.556,940707223.691,-5027733.684,1113622949.542
+-1.066,12987171.376,931473801.135,2016120.153,1108595215.857
+1.321,399087810.065,944460972.511,468431606.063,1110611336.010
+...
+```
+
+#### Column descriptions
+
+| Column | Unit | Description |
 |---|---|---|
-| `Ferroelectric` (Exponential) | `V`, `w`, `dw` | Write voltage (V), initial normalized weight [0,1], weight change ΔW |
-| `Ferroelectric_Tanh` | `V`, `Rfinal`, `dR` | Write voltage (V), final resistance (Ω), resistance change ΔR |
+| `pulseAmplitude` | V | Write pulse voltage applied to the device. Typically ranges from −3 V to +3 V. Positive values drive LTP (potentiation); negative values drive LTD (depression). |
+| `deltaRneg(measured at -80mV)` | Ω | Change in resistance measured at −80 mV read bias after the write pulse. A negative value means resistance decreased (potentiation). |
+| `RnegInitial` | Ω | Resistance state of the device **before** the write pulse, measured at −80 mV. Typical range: ~9×10⁸ Ω (low state) to ~3×10⁹ Ω (high state). |
+| `deltaRpos(measured at +80mV)` | Ω | Change in resistance measured at +80 mV read bias after the write pulse. |
+| `RposInitial` | Ω | Resistance state of the device **before** the write pulse, measured at +80 mV. |
 
-Your file may use any delimiter supported by `pandas.read_csv`. If your file is tab-separated or uses a different separator, add `sep='\t'` (or the appropriate separator) inside the `pd.read_csv()` call in `Characterization.py → normalize_data()`.
+> **Two read-bias columns:** The device is characterised at both −80 mV and +80 mV read bias. `Characterization.py` uses both sets of measurements to fit a more robust model of the switching envelope. Both column pairs (`deltaRneg`/`RnegInitial` and `deltaRpos`/`RposInitial`) are required.
+
+#### Adapting your own measurement data
+
+If your measurement setup uses different column names, you have two options:
+
+**Option A — Rename your columns** to match the format above before saving to `data/`. This is the simplest approach.
+
+**Option B — Edit `Characterization.py`** to match your column names. Find the `normalize_data()` method and update the `pd.read_csv()` call and the column references inside it:
+```python
+# Example: if your file uses 'V_pulse', 'dR_neg', 'R0_neg', 'dR_pos', 'R0_pos'
+df = pd.read_csv(filepath)
+df = df.rename(columns={
+    'V_pulse':  'pulseAmplitude',
+    'dR_neg':   'deltaRneg(measured at -80mV)',
+    'R0_neg':   'RnegInitial',
+    'dR_pos':   'deltaRpos(measured at +80mV)',
+    'R0_pos':   'RposInitial',
+})
+```
 
 #### Data normalisation
 
-The `normalize_data()` method in `Characterization.py` preprocesses your raw file and saves a normalised copy as `data/YOUR_FILE_normalized.csv`. This step runs automatically. If you modify your raw data, delete the `_normalized.csv` file to force re-normalisation, or set `force_recompute=True` when calling `ModelCharac`.
+The `normalize_data()` method in `Characterization.py` preprocesses your raw file and saves a normalised copy as `data/YOUR_FILE_normalized.csv`. This step runs automatically on first use. If you modify your raw data, delete the `_normalized.csv` file to force re-normalisation.
 
 ---
 
@@ -172,14 +206,14 @@ Open **`config.py`** and set `SYNAPSE_MODEL` to one of the two options:
 ```python
 # config.py
 
-SYNAPSE_MODEL = "Ferroelectric_Tanh"   # Use tanh resistance-envelope model
+SYNAPSE_MODEL = "Ferroelectric_Tanh"   # Use tanh resistance-envelope model (default)
 # SYNAPSE_MODEL = "Ferroelectric"       # Use exponential switching model
 ```
 
 **Which model should I choose?**
 
-- Use `Ferroelectric_Tanh` if your device measurements give you a hysteresis loop (R vs. V with an upper and lower resistance envelope). This model is more physically interpretable for FTJ/FeFET-type devices.
-- Use `Ferroelectric` if your measurements directly provide the weight-change curve (ΔW vs. V), or if you want to fit an exponential-window VDSP model.
+- Use `Ferroelectric_Tanh` (default) if your device data comes in the pulse-switching format described above (resistance vs. pulse amplitude). This model fits the upper and lower resistance envelopes using tanh curves, matching the hysteretic R–V switching behaviour of FTJ/FeFET-type devices.
+- Use `Ferroelectric` if you have already computed a normalised weight-change curve (ΔW vs. V), or if you want to fit an exponential-window VDSP model and use the co-design algorithm (§5.6).
 
 ---
 
@@ -207,6 +241,17 @@ The script prints the fitted parameter values to the terminal and saves them as 
 
 #### Model parameters explained
 
+**Tanh model (`Ferroelectric_Tanh`)** — output parameters:
+
+| Parameter | Physical meaning |
+|---|---|
+| `r_min` | Minimum (on-state) resistance (Ω) — lower bound of the LTP envelope |
+| `r_max` | Maximum (off-state) resistance (Ω) — upper bound of the LTD envelope |
+| `v0_up` | Voltage scale of the upper (LTD) tanh envelope |
+| `voff_up` | Voltage offset of the upper envelope |
+| `v0_low` | Voltage scale of the lower (LTP) tanh envelope |
+| `voff_low` | Voltage offset of the lower envelope |
+
 **Exponential model (`Ferroelectric`)** — output parameters:
 
 | Parameter | Physical meaning |
@@ -217,17 +262,6 @@ The script prints the fitted parameter values to the terminal and saves them as 
 | `theta_d` | LTD switching threshold voltage |
 | `alpha_p` | LTP switching rate |
 | `alpha_d` | LTD switching rate |
-
-**Tanh model (`Ferroelectric_Tanh`)** — output parameters:
-
-| Parameter | Physical meaning |
-|---|---|
-| `r_min` | Minimum (on-state) resistance (Ω) |
-| `r_max` | Maximum (off-state) resistance (Ω) |
-| `v0_up` | Voltage scale of the upper (LTD) tanh envelope |
-| `voff_up` | Voltage offset of the upper envelope |
-| `v0_low` | Voltage scale of the lower (LTP) tanh envelope |
-| `voff_low` | Voltage offset of the lower envelope |
 
 ---
 
@@ -446,6 +480,9 @@ Your device data (*.dat)
 
 **`FileNotFoundError: data/ABS_03_summary.dat`**  
 → Your device data file is missing or `RAW_DEVICE_DATA_PATH` in `Characterization.py` line 16 is wrong.
+
+**`KeyError` or `ValueError` when loading your data file**  
+→ Your file's column names do not match the expected names. See §5.1 for the required column names and how to rename them in `Characterization.py → normalize_data()`.
 
 **`FileNotFoundError` when saving figures**  
 → `save_path` in `Characterization.py` line 12 still points to the author's absolute Windows path. Change it to `"figures"`.
