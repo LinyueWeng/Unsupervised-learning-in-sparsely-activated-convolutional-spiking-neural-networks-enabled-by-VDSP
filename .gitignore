@@ -6,11 +6,10 @@ extracted_feature/
 venv/
 ENV/
 
-utils.py
-
 __pycache__/
 *.py[cod]
 
 
 data/MNIST
+data/FashionMNIST/
 git rm -r --cached extracted_feature/
