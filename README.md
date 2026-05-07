@@ -212,8 +212,8 @@ SYNAPSE_MODEL = "Ferroelectric_Tanh"   # Use tanh resistance-envelope model (def
 
 **Which model should I choose?**
 
-- Use `Ferroelectric_Tanh` (default) if your device data comes in the pulse-switching format described above (resistance vs. pulse amplitude). This model fits the upper and lower resistance envelopes using tanh curves, matching the hysteretic R–V switching behaviour of FTJ/FeFET-type devices.
-- Use `Ferroelectric` if you have already computed a normalised weight-change curve (ΔW vs. V), or if you want to fit an exponential-window VDSP model and use the co-design algorithm (§5.6).
+- Use `Ferroelectric_Tanh` (default). This model fits the upper and lower resistance envelopes using tanh curves, matching the hysteretic R–V switching behaviour of FTJ/FeFET-type devices.
+- Use `Ferroelectric` if you want to fit an exponential-window VDSP model and use the co-design algorithm (§5.6).
 
 ---
 
@@ -237,7 +237,7 @@ This will:
 > ```
 
 **Fit result:**  
-The script prints the fitted parameter values to the terminal and saves them as `data/params_Ferroelectric.csv` or `data/params_Ferroelectric_Tanh.csv`. These cached parameters are loaded automatically on subsequent runs — delete the CSV to force re-fitting.
+The script prints the fitted parameter values to the terminal and saves them as `data/params_Ferroelectric.csv` or `data/params_Ferroelectric_Tanh.csv`. These cached parameters are loaded automatically on subsequent runs — we recommend you set `force_recompute == True` in any case to force re-fitting.
 
 #### Model parameters explained
 
