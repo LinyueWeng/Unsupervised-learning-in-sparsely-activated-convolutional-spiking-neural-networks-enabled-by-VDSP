@@ -1,4 +1,4 @@
-# Unsupervised Learning in Sparsely Activated Convolutional Spiking Neural Networks Enabled by VDSP
+# Comparative Analysis of Ferroelectric Models
 
 A simulation framework for evaluating **neuromorphic memristor devices** in a convolutional spiking neural network (CSNN) trained via **Voltage-Dependent Synaptic Plasticity (VDSP)**. The network is trained unsupervised and evaluated on MNIST / Fashion-MNIST using a downstream SVM classifier. The framework also quantifies how device non-idealities — **device-to-device (D2D)** and **cycle-to-cycle (C2C) variations** — impact classification accuracy.
 
