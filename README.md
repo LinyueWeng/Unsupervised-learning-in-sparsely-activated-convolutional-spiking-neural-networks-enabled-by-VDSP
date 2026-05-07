@@ -166,7 +166,7 @@ pulseAmplitude,deltaRneg(measured at -80mV),RnegInitial,deltaRpos(measured at +8
 
 | Column | Unit | Description |
 |---|---|---|
-| `pulseAmplitude` | V | Write pulse voltage applied to the device. Typically ranges from −3 V to +3 V. Positive values drive LTP (potentiation); negative values drive LTD (depression). |
+| `pulseAmplitude` | V | Write pulse voltage applied to the device. Typically ranges from −3 V to +3 V. Positive values drive LTD (depression); negative values drive LTP (potentiation). |
 | `deltaRneg(measured at -80mV)` | Ω | Change in resistance measured at −80 mV read bias after the write pulse. A negative value means resistance decreased (potentiation). |
 | `RnegInitial` | Ω | Resistance state of the device **before** the write pulse, measured at −80 mV. Typical range: ~9×10⁸ Ω (low state) to ~3×10⁹ Ω (high state). |
 | `deltaRpos(measured at +80mV)` | Ω | Change in resistance measured at +80 mV read bias after the write pulse. |
