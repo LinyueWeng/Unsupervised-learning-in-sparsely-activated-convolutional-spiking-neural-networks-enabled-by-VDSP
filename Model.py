@@ -25,7 +25,7 @@ class CSNN_Layerwise:
         self.sfd=sfd
         self.synapse_model=synapse_model
 
-        self.conv1 = CsnnLayer(self.input_shape(1),128,tau=0.99,v=v,sfp=sfp,sfd=self.sfd,synapse_model=self.synapse_model,kernel_size=7,stride=1,padding=3,lr=self.lr,f_dep=self.f_dep,v_rest=self.v_rest,v_thresh=self.v_thresh,v_reset=self.v_reset,r_inhib=self.r_inhib,device=self.device,timesteps=self.timesteps,n_winners=7)
+        self.conv1 = CsnnLayer(self.input_shape(1),128,tau=1.0,v=v,sfp=sfp,sfd=self.sfd,synapse_model=self.synapse_model,kernel_size=7,stride=1,padding=3,lr=self.lr,f_dep=self.f_dep,v_rest=self.v_rest,v_thresh=self.v_thresh,v_reset=self.v_reset,r_inhib=self.r_inhib,device=self.device,timesteps=self.timesteps,n_winners=7)
         self.pool1 = SnnPooling((self.timesteps,self.conv1.output_channels,self.conv1.output_h,self.conv1.output_w),kernel_size=3,stride=3,padding=0,v_thresh=1,timesteps=self.timesteps,device=self.device)
         if hasattr(self.conv1, 'weight'):
             self.conv1.weight = self.conv1.weight.to(self.device)
