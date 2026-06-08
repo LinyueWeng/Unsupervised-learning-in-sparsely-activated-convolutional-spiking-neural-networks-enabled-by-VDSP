@@ -271,7 +271,7 @@ class Ferroelectric_Tanh:
         r_s = (self.r_max - self.r_min) / 2.0
         return r_off + r_s * torch.tanh((v - self.voff_low) / self.v0_low)
 
-    def r_to_weff(self, r, alpha_open=4.0, beta_short=4.0):
+    def r_to_weff(self, r):
         r_min = torch.as_tensor(self.r_min, dtype=r.dtype, device=r.device)
         r_max = torch.as_tensor(self.r_max, dtype=r.dtype, device=r.device)
 
@@ -315,7 +315,7 @@ class Ferroelectric_Tanh:
 
         return weff
 
-    def weff_to_r(self, weff, alpha_open=4.0, beta_short=4.0):
+    def weff_to_r(self, weff):
         r_min = torch.as_tensor(self.r_min, dtype=weff.dtype, device=weff.device)
         r_max = torch.as_tensor(self.r_max, dtype=weff.dtype, device=weff.device)
 

@@ -9,9 +9,47 @@ from Model import CSNN_Layerwise
 from utils import DoGTransform
 import matplotlib.pyplot as plt
 from Solver import CoDesignSolver
-from Model import TIMESTEPS
+from Layers import CsnnLayer
 from Characterization import ModelCharac
 from config import *
+
+def visualize_D_regions(t_post=[5,10,15],tau=[0.6,0.99]):
+    """
+    Out of workflow, just for presentation.
+    Visualize D_LTP / D_LTD / D_0 regions。
+    Red: D_LTP, Blue: D_LTD, Green: D_0
+    """
+    transform = transforms.ToTensor()
+    dataset = datasets.FashionMNIST(
+        root="./data",
+        train=True,
+        download=True,
+        transform=transform,
+    )
+
+    idx = torch.randint(0, len(dataset), (1,)).item()
+    image, label = dataset[idx]
+
+    for i in tau:
+        layer = CsnnLayer(
+            input_shape=(1, 1, 28, 28),
+            output_channels=1,
+            kernel_size=7,
+            stride=1,
+            padding=3,
+            timesteps=TIMESTEPS,
+            tau=i,
+            synapse_model='Ferroelectric',
+        )
+
+        for m in t_post:
+            layer.visualize_D_regions_for_image(
+                image=image,
+                t_post=m,
+                device_model_name='Ferroelectric',
+                save_path=f"figures/D_regions_tau{i}_tpost{m}.png",
+            )
+
 
 def set_seed(seed):
     import random
@@ -229,6 +267,7 @@ def Train_csnn(model, convergence_rate=0.1):
 
 
 if __name__ == "__main__":
+    visualize_D_regions([5,10,15,20],[0.66,0.8,0.99])
     sfd = 1.0
     if SYNAPSE_MODEL == "Ferroelectric":
         """

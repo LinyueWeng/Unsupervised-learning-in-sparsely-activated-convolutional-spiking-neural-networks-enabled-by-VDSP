@@ -1,4 +1,8 @@
 import os
+from matplotlib.lines import Line2D
+import math
+
+from config import MONITOR_SYNAPSE
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import torch
@@ -121,7 +125,7 @@ class CsnnLayer:
                  lr=0.01,
                  f_dep=2,
                  timesteps=15,
-                 v_rest=0, v_thresh=10,v_reset=-1,
+                 v_rest=0, v_thresh=1,v_reset=-1,
                  r_inhib=3, n_winners=7,
                  w_min=0, w_max=0.1,w_sat=1.0,
                  weight_mean=0.08, weight_std=0.005,
@@ -130,6 +134,9 @@ class CsnnLayer:
                  tau=0.99,
                  device=device_local,
                  synapse_model='Softbound'):
+
+        self.monitor_synapse=MONITOR_SYNAPSE
+        self.end_monitor=False
 
         self.device = torch.device(device) if isinstance(device, str) else device
         self.batch_size, self.input_c, self.input_h, self.input_w = input_shape
@@ -179,6 +186,13 @@ class CsnnLayer:
 
         self.weight = torch.normal(mean=weight_mean, std=weight_std,
                                    size=(self.output_channels, self.input_c, self.kernel_size, self.kernel_size)).to(self.device)
+
+        # monitor_initial_conductance=input('Please assign the initial conductance to the monitor synapse')
+        # synapse_model_class = self.synapse_model_dictionary.get(self.synapse_model)
+        # synapse_instance = synapse_model_class(w_winners, w_sat=self.w_sat, w_max=self.w_max, w_min=self.w_min,
+        #                                              v_ref=self.v, sf_p=self.sfp, sf_d=self.sfd, **self.model_charac)
+        # self.weight.reshape(-1)[self.monitor_synapse]=synapse_instance.r_to_weff(monitor_initial_conductance)
+
         """
         Here you may change the criteria to define the defects.
         """
@@ -597,6 +611,138 @@ class CsnnLayer:
             print(f"\nGIF saved to: {gif_path}")
 
             sys.exit()
+
+    def compute_D_regions_for_image(self, image, t_post, device_model_name='Ferroelectric'):
+        """
+        Out of workflow, just for presentation.
+        Analytical co-design，under a given t_post，
+        partition D_LTP, D_LTD and D_0。
+        image: [H,W] or [1,H,W]，ranging [0,1] or [0,255]
+        t_post: giuen postsynaptic time(1...self.timesteps)
+        Return: 3 bool mask，shape [H,W]：mask_ltp, mask_ltd, mask_none
+        """
+        if not isinstance(image, torch.Tensor):
+            image = torch.tensor(image, dtype=torch.float32, device=self.device)
+        else:
+            image = image.to(self.device)
+
+        if image.max() > 1.0:
+            image = image / 255.0
+
+        if image.dim() == 2:
+            image = image.unsqueeze(0)
+        elif image.dim() == 4:
+            image = image[0]
+
+        x = image  # [1,H,W]
+
+        T       = float(self.timesteps)
+        tau     = float(self.tau)
+        V_reset = float(self.v_reset.item())
+        V_thres = float(self.v_thresh.item())
+
+        base_params = ModelCharac(device_model_name)()
+        theta_p = float(base_params['theta_p'])
+        theta_d = float(base_params['theta_d'])
+
+        eps = 1e-12
+        tau_clipped = min(max(tau, eps), 1.0 - eps)
+
+        x0 = 1.0 - (t_post - 1.0) / T
+
+        ratio_p = theta_p / V_reset
+        ratio_p = max(ratio_p, eps)
+        delta_p_star = math.log(ratio_p) / math.log(tau_clipped)
+        xp = 1.0 - (t_post - 1.0 - delta_p_star) / T
+
+        A = V_thres * (1.0 - tau_clipped ** t_post) / ((1.0 - tau_clipped) * theta_d)
+
+        A = max(A, 1.0 + eps)
+        xd = 1.0 - (A - 1.0) / T
+
+        x0 = float(max(0.0, min(1.0, x0)))
+        xp = float(max(0.0, min(1.0, xp)))
+        xd = float(max(0.0, min(1.0, xd)))
+
+        x_val = x.squeeze(0)  # [H,W]
+
+        mask_ltp = torch.zeros_like(x_val, dtype=torch.bool)
+        if xp > x0:
+            mask_ltp = (x_val > x0) & (x_val < xp)
+
+        mask_ltd = torch.zeros_like(x_val, dtype=torch.bool)
+        if xd < x0:
+            mask_ltd = (x_val > xd) & (x_val < x0)
+
+        mask_none = ~(mask_ltp | mask_ltd)
+
+        return mask_ltp, mask_ltd, mask_none
+
+    def visualize_D_regions_for_image(self, image, t_post, device_model_name='Ferroelectric', save_path=None):
+        """
+        Out of workflow, just for presentation.
+        Visualize D_LTP / D_LTD / D_0 regions。
+        Red: D_LTP, Green: D_LTD
+        """
+        mask_ltp, mask_ltd, mask_none = self.compute_D_regions_for_image(
+            image, t_post, device_model_name=device_model_name
+        )
+
+        if not isinstance(image, torch.Tensor):
+            image = torch.tensor(image, dtype=torch.float32, device=self.device)
+        else:
+            image = image.to(self.device)
+
+        if image.max() > 1.0:
+            image = image / 255.0
+        if image.dim() == 2:
+            image = image.unsqueeze(0)
+        image_np = image.squeeze(0).cpu().numpy()
+
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.imshow(image_np, cmap='gray', vmin=0, vmax=1)
+
+        ltp_np = mask_ltp.cpu().numpy().astype(float)
+        ltd_np = mask_ltd.cpu().numpy().astype(float)
+
+        ax.contour(
+            ltp_np,
+            levels=[0.5],
+            colors='red',
+            linewidths=1.5
+        )
+        ax.contour(
+            ltd_np,
+            levels=[0.5],
+            colors='cyan',
+            linewidths=1.5
+        )
+
+        ax.set_axis_off()
+        tau_used = float(self.tau)
+
+        ax.set_title(
+            rf"$t_{{\mathrm{{post}}}} = {t_post},\ \tau = {tau_used:.3f}$",
+            fontsize=12
+        )
+
+        handles = [
+            Line2D([0], [0], color='red', lw=2, label=r"$D_{\mathrm{LTP}}$"),
+            Line2D([0], [0], color='cyan', lw=2, label=r"$D_{\mathrm{LTD}}$"),
+        ]
+        ax.legend(handles=handles,
+                  loc='lower right',
+                  frameon=True,
+                  framealpha=0.8,
+                  fontsize=10)
+
+        fig.tight_layout()
+
+        if save_path is not None:
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            fig.savefig(save_path, bbox_inches='tight', dpi=300)
+
+        plt.show()
 
 class SnnPooling:
     """

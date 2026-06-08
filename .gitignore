@@ -8,7 +8,7 @@ ENV/
 
 __pycache__/
 *.py[cod]
-
+figures/
 
 data/MNIST
 data/FashionMNIST/
